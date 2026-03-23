@@ -1,18 +1,20 @@
 ---
 name: one-auth
-description: Add OAuth connections for 250+ platforms (Gmail, Slack, HubSpot, etc.) with One's drop-in Auth widget
+description: Enable One Auth — a drop-in authentication widget that lets your users connect their third-party apps (Gmail, Slack, HubSpot, etc.) to your application. Supports OAuth and non-OAuth integrations across 250+ platforms with project-level multi-tenant configuration.
 ---
 
 # One Auth Integration Guide
 
-Complete guide for integrating One Auth to enable users to connect third-party tools (Gmail, Slack, HubSpot, etc.) in your application.
+One Auth is a drop-in authentication widget that lets your users connect their third-party apps to your application. It supports 250+ integrations — both OAuth and non-OAuth — including Gmail, Slack, HubSpot, Salesforce, QuickBooks, and more. Configuration is managed per-project via the [One Dashboard](https://app.withone.ai/settings/authkit), enabling multi-tenant architectures where each project maintains its own set of visible apps, OAuth credentials, and scopes.
 
 ## What is One Auth?
 
-One Auth is a drop-in OAuth component that:
-- Provides pre-built UI for 250+ integration OAuth flows
+One Auth is a pre-built, embeddable authentication component that:
+- Lets your users connect their third-party apps (Gmail, Slack, HubSpot, etc.) to your application
+- Supports both OAuth and non-OAuth integrations across 250+ platforms
 - Handles token management and refresh automatically
 - Works with any frontend framework (React, Vue, vanilla JS)
+- Configurable per-project via the [One Dashboard](https://app.withone.ai/settings/authkit) — choose which apps are visible, use your own OAuth credentials or One's defaults, and customize scopes
 - Requires a backend token endpoint
 
 ## Prerequisites
@@ -453,6 +455,26 @@ interface AuthProps {
   onClose?: () => void;
 }
 ```
+
+---
+
+## Configuration & Management
+
+All configuration for what appears in the Auth component is managed via the **[One Dashboard](https://app.withone.ai/settings/authkit)** — not in code.
+
+### What You Can Configure
+
+| Setting | Description |
+|---------|-------------|
+| **Visible apps** | Choose which integrations appear in the Auth modal for your users |
+| **OAuth credentials** | Use One's default client ID/secret, or provide your own for any integration |
+| **Scopes** | Customize the OAuth scopes requested for each integration |
+
+### Project-Level Scoping
+
+AuthKit configuration is scoped at the **project level**, enabling multi-tenant architecture. Each project in your One account maintains its own independent set of visible apps, OAuth credentials, and scopes. This means you can serve different AuthKit configurations to different products or customer segments from a single One account.
+
+> **Dashboard link:** [app.withone.ai/settings/authkit](https://app.withone.ai/settings/authkit)
 
 ---
 
