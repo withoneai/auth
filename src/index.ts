@@ -1,0 +1,1 @@
+export { useEventLink as useOneAuth } from './useEventLink';

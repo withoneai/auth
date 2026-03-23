@@ -1,0 +1,23 @@
+{
+  "presets": [
+    [
+      "@babel/preset-env",
+      {
+        "targets": {
+          "browsers": [
+            "> 0.25%",
+            "not dead",
+            "not op_mini all"
+          ]
+        },
+        "bugfixes": true
+      }
+    ],
+    "@babel/preset-typescript"
+  ],
+  "plugins": [
+    "@babel/plugin-transform-class-properties",
+    "@babel/plugin-transform-optional-chaining",
+    "@babel/plugin-transform-nullish-coalescing-operator"
+  ]
+}
