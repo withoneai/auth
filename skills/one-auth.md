@@ -34,7 +34,7 @@ One Auth is a drop-in OAuth component that:
        └───────────── OAuth Flow ──────────────────┘
 ```
 
-1. Frontend calls your token endpoint
+1. Frontend calls your token endpoint (with pagination params)
 2. Your backend generates a One session token
 3. One Auth uses token to manage OAuth flow
 4. On success, you receive connection details to store
@@ -59,56 +59,92 @@ Your backend needs an endpoint that generates an Auth token by calling the One A
 
 ```env
 ONE_SECRET_KEY=sk_test_your_secret_key_here
-ONE_API_BASE_URL=https://api.withone.ai
 ```
 
 | Variable | Description |
 |---|---|
 | `ONE_SECRET_KEY` | Your secret key from [One dashboard](https://app.withone.ai/settings/api-keys) |
-| `ONE_API_BASE_URL` | One API base URL (`https://api.withone.ai`) |
 
 ### Requirements
 - Must be accessible via full URL (not relative path)
 - Must include CORS headers (Auth iframe calls this endpoint)
 - Should identify the user via `x-user-id` header
+- Must handle pagination — the Auth widget sends `page` and `limit` as query parameters
 
 ### How It Works
 
 1. Your endpoint extracts the `x-user-id` header and validates it
-2. It calls `POST {ONE_API_BASE_URL}/v1/authkit/token` with your `ONE_SECRET_KEY` in the `X-One-Secret` header and a JSON body containing the user's `identity` and `identityType`
-3. The API returns a token, which is forwarded back to the client
+2. The Auth widget sends `page` and `limit` as query parameters for paginated integration lists
+3. It calls `POST https://api.withone.ai/v1/authkit/token?page={page}&limit={limit}` with your `ONE_SECRET_KEY` in the `X-One-Secret` header and a JSON body containing the user's `identity` and `identityType`
+4. The API returns the integration list, which is forwarded back to the client
 
 ### Token Generation Code
 
 ```typescript
-// POST /api/authkit
-export async function POST(req: Request) {
-  const userId = req.headers.get("x-user-id");
-  if (!userId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+import { NextRequest, NextResponse } from "next/server";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-user-id",
+};
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
+// POST /api/one-auth
+export async function POST(req: NextRequest) {
+  try {
+    const userId = req.headers.get("x-user-id");
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    // The Auth widget sends pagination params as query parameters
+    const page = req.nextUrl.searchParams.get("page");
+    const limit = req.nextUrl.searchParams.get("limit");
+
+    const response = await fetch(
+      `https://api.withone.ai/v1/authkit/token?page=${page}&limit=${limit}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-One-Secret": process.env.ONE_SECRET_KEY!,
+        },
+        body: JSON.stringify({
+          identity: userId,
+          identityType: "user",
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: "Failed to generate token" },
+        { status: response.status, headers: corsHeaders }
+      );
+    }
+
+    const data = await response.json();
+    return NextResponse.json(data, { headers: corsHeaders });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Failed to generate token" },
+      { status: 500, headers: corsHeaders }
+    );
   }
-
-  const response = await fetch(`${process.env.ONE_API_BASE_URL}/v1/authkit/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-One-Secret": process.env.ONE_SECRET_KEY!,
-    },
-    body: JSON.stringify({
-      identity: userId,
-      identityType: "user",
-    }),
-  });
-
-  const token = await response.json();
-  return Response.json(token);
 }
 ```
 
 ### Example cURL Request
 
 ```bash
-curl -X POST "https://your-domain.com/api/authkit" \
+curl -X POST "https://your-domain.com/api/one-auth" \
   -H "Content-Type: application/json" \
   -H "x-user-id: f47ac10b-58cc-4372-a567-0e02b2c3d479"
 ```
@@ -118,10 +154,36 @@ curl -X POST "https://your-domain.com/api/authkit" \
 **Success (200):**
 ```json
 {
-  "token": "ey...",
-  ...
+  "rows": [
+    {
+      "id": 41596,
+      "connectionDefId": 34,
+      "type": "api",
+      "title": "ActiveCampaign",
+      "image": "https://assets.withone.ai/connectors/activecampaign.svg",
+      "environment": "test",
+      "tags": [],
+      "active": true
+    },
+    {
+      "id": 41524,
+      "connectionDefId": 109,
+      "type": "api",
+      "title": "Anthropic",
+      "image": "https://assets.withone.ai/connectors/anthropic.svg",
+      "environment": "test",
+      "tags": [],
+      "active": true
+    }
+  ],
+  "total": 247,
+  "pages": 3,
+  "page": 1,
+  "requestId": 110256
 }
 ```
+
+The response includes a paginated list of available integrations. The widget handles pagination automatically by calling your token endpoint with different `page` values.
 
 **Error (401) — Missing user ID:**
 ```json
@@ -159,7 +221,7 @@ import { useOneAuth } from "@withone/auth";
 function ConnectButton() {
   const { open } = useOneAuth({
     token: {
-      url: "https://your-domain.com/api/auth/token", // MUST be full URL
+      url: "https://your-domain.com/api/one-auth", // MUST be full URL
       headers: {
         "x-user-id": currentUserId,
       },
@@ -192,11 +254,11 @@ function ConnectButton() {
 
 ```typescript
 // CORRECT - Full URL
-url: "https://your-domain.com/api/auth/token"
-url: `${window.location.origin}/api/auth/token`
+url: "https://your-domain.com/api/one-auth"
+url: `${window.location.origin}/api/one-auth`
 
 // INCORRECT - Will fail
-url: "/api/auth/token"
+url: "/api/one-auth"
 ```
 
 ### selectedConnection Parameter
