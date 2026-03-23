@@ -38,6 +38,16 @@ With yarn:
 yarn add @withone/auth
 ```
 
+## Getting Started with the Skill
+
+The easiest way to integrate One Auth is by installing the skill for your AI coding agent. The skill provides step-by-step guidance for setting up the backend token endpoint, frontend component, and connection handling.
+
+```bash
+npx skills add withoneai/auth
+```
+
+Once installed, your AI coding agent will have full context on how to set up and work with One Auth in your project.
+
 ## Using the Auth component
 
 Replace the `token URL` with your backend token endpoint URL (must be a full URL, not a relative path).
@@ -220,6 +230,18 @@ export async function POST(req: NextRequest) {
 ```
 
 The response includes a paginated list of available integrations. The widget handles pagination automatically by calling your token endpoint with different `page` values.
+
+## Configuration & Management
+
+All configuration for the Auth component is managed via the **[One Dashboard](https://app.withone.ai/settings/authkit)**. From the dashboard, you can:
+
+- **Choose which apps are visible** — Select which integrations appear in the Auth modal for your users
+- **Configure OAuth credentials** — Use One's default client ID and client secret, or bring your own for any integration
+- **Adjust scopes** — Customize the OAuth scopes requested for each integration
+
+AuthKit configuration is scoped at the **project level**, enabling multi-tenant architecture. Each project in your One account can have its own set of visible apps, OAuth credentials, and scopes — allowing you to serve different configurations to different products or customer segments from a single account.
+
+> **Dashboard link:** [app.withone.ai/settings/authkit](https://app.withone.ai/settings/authkit)
 
 ## Diagram
 
