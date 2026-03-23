@@ -50,7 +50,9 @@ Once installed, your AI coding agent will have full context on how to set up and
 
 ## Using the Auth component
 
-Replace the `token URL` with your backend token endpoint URL (must be a full URL, not a relative path).
+Replace the `token URL` with your backend token endpoint URL.
+
+> ⚠️ **Must be a full URL** — relative paths like `/api/one-auth` won't work because the Auth widget runs in an iframe on a different domain. Use the complete URL (e.g., `https://your-domain.com/api/one-auth`).
 
 ```tsx
 "use client";

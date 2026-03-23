@@ -68,7 +68,7 @@ ONE_SECRET_KEY=sk_test_your_secret_key_here
 | `ONE_SECRET_KEY` | Your secret key from [One dashboard](https://app.withone.ai/settings/api-keys) |
 
 ### Requirements
-- Must be accessible via full URL (not relative path)
+- Must be accessible via full URL — relative paths won't work because the widget runs in an iframe on a different domain
 - Must include CORS headers (Auth iframe calls this endpoint)
 - Should identify the user via `x-user-id` header
 - Must handle pagination — the Auth widget sends `page` and `limit` as query parameters
@@ -254,12 +254,14 @@ function ConnectButton() {
 
 ### Critical: Token URL Must Be Full URL
 
+> ⚠️ **Must be a full URL** — relative paths like `/api/one-auth` won't work because the Auth widget runs in an iframe on a different domain. Use the complete URL (e.g., `https://your-domain.com/api/one-auth`).
+
 ```typescript
 // CORRECT - Full URL
 url: "https://your-domain.com/api/one-auth"
 url: `${window.location.origin}/api/one-auth`
 
-// INCORRECT - Will fail
+// INCORRECT - Will fail silently
 url: "/api/one-auth"
 ```
 
