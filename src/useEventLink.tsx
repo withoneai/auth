@@ -61,11 +61,18 @@ export const useEventLink = (props: EventLinkProps) => {
   };
 
   const close = () => {
-    // Clean up listener when closing
+    // Clean up listener and dedup state when closing
     if (typeof window !== "undefined" && messageHandler && isListenerActive) {
       window.removeEventListener("message", messageHandler);
       isListenerActive = false;
       messageHandler = null;
+    }
+    // Only clear the EXIT dedup key so re-opening works immediately.
+    // LINK_SUCCESS / LINK_ERROR dedup keys stay to prevent duplicate callbacks.
+    for (const key of processedMessages) {
+      if (key.startsWith("EXIT_EVENT_LINK")) {
+        processedMessages.delete(key);
+      }
     }
 
     linkWindow.closeLink();
