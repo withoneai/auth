@@ -15,9 +15,9 @@ export interface EventLinkProps {
   }
 }
 
+// Internal type — extends EventLinkProps with implementation flags
+// not part of the public API.
 export interface EventLinkWindowProps {
-  // linkTokenEndpoint: string;
-  // linkHeaders?: Record<string, unknown>;
   baseUrl?: string;
   appTheme?: 'dark' | 'light';
   environment?: "sandbox" | "production";
@@ -30,7 +30,11 @@ export interface EventLinkWindowProps {
   token: {
     url: string;
     headers?: Record<string, unknown>;
-  }
+  };
+  // Internal: when set, the iframe is opened in "check" mode and goes
+  // straight to polling /v1/connections/oauth/check?state=X. Used by
+  // the OAuth return flow after a same-window redirect.
+  checkState?: string;
 }
 
 export interface ConnectionRecord {
@@ -64,9 +68,13 @@ export interface ConnectionRecord {
   active: boolean;
   deprecated: boolean;
 }
+
 export interface EventProps {
   data: {
     messageType: string;
     message: ConnectionRecord | string;
+    // Optional fields for OAUTH_REDIRECT messages
+    url?: string;
+    state?: string;
   }
 }
