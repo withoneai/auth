@@ -211,13 +211,21 @@ function detectOAuthReturn(props: EventLinkProps) {
 
   oauthReturnHandled = true;
 
-  if (errorParam) {
-    handleOAuthReturnError(props, errorParam);
+  // When the callback page redirects back with an error, the backend
+  // has already recorded the failure state. If we also have a state
+  // param, open the iframe in checkState mode — it will poll, see the
+  // failure, and render the "Connection failed" screen. This gives
+  // the user visual feedback and handles URL cleanup naturally when
+  // the iframe closes.
+  if (stateParam) {
+    handleOAuthReturn(props, stateParam);
     return;
   }
 
-  if (stateParam) {
-    handleOAuthReturn(props, stateParam);
+  // Error without a state param — no iframe to open. Fall back to
+  // firing onError and stripping the URL.
+  if (errorParam) {
+    handleOAuthReturnError(props, errorParam);
   }
 }
 
