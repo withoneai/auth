@@ -181,12 +181,12 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
 // and the callback page knows there's nothing to poll. We just notify
 // the consumer and strip the URL params.
 function handleOAuthReturnError(props: EventLinkProps, errorMessage: string) {
+  // Strip params synchronously — deferring via setTimeout causes Next.js
+  // App Router to reconcile its internal URL state before the strip runs,
+  // which restores the query params.
+  stripReturnParamsFromUrl();
   setTimeout(() => {
-    try {
-      props.onError?.(errorMessage);
-    } finally {
-      stripReturnParamsFromUrl();
-    }
+    props.onError?.(errorMessage);
   }, 0);
 }
 
