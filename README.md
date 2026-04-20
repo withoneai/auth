@@ -95,6 +95,7 @@ export function ConnectIntegrationButton() {
 | `title` | `string` | Custom title for the modal |
 | `imageUrl` | `string` | Custom logo URL to display in the modal |
 | `companyName` | `string` | Your company name to display in the modal |
+| `authWindow` | `"same" \| "popup"` | How the OAuth provider is opened. Defaults to `"same"` (top-level redirect, returns to the original page). Pass `"popup"` to open in a separate window instead. |
 | `onSuccess` | `(connection) => void` | Callback when a connection is successfully created |
 | `onError` | `(error) => void` | Callback when the connection fails |
 | `onClose` | `() => void` | Callback when the modal is closed |
