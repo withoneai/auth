@@ -9,6 +9,13 @@ export interface EventLinkProps {
   onError?: (error: string) => void;
   selectedConnection?: string;
   showNameInput?: boolean;
+  // Controls how the third-party OAuth provider is opened.
+  // 'same' (default): navigate the top-level window to the provider
+  // and return to the original page via a state-encoded return URL.
+  // 'popup': open the provider in a separate popup window (the
+  // pre-1.0.3 behavior). Useful if the host app can't tolerate a
+  // full-page redirect.
+  authWindow?: 'same' | 'popup';
   token: {
     url: string;
     headers?: Record<string, unknown>;
@@ -27,6 +34,7 @@ export interface EventLinkWindowProps {
   onClose?: () => void;
   selectedConnection?: string;
   showNameInput?: boolean;
+  authWindow?: 'same' | 'popup';
   token: {
     url: string;
     headers?: Record<string, unknown>;

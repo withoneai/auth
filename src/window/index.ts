@@ -1,13 +1,5 @@
 import { EventLinkWindowProps } from "../types";
 
-// Capability flag sent to the auth iframe so it knows the parent
-// supports the same-window OAuth redirect flow. Older iframes that
-// don't read this flag will keep using the popup behavior. Older
-// packages (without this flag) make the iframe fall back to popups.
-const PACKAGE_CAPABILITIES = {
-  oauthRedirect: true,
-};
-
 // DOM ID for the auth iframe. Constant so the package can find and
 // remove its own iframe deterministically across re-mounts and BFCache
 // edge cases.
@@ -24,6 +16,7 @@ export class EventLinkWindow {
   private selectedConnection?: string;
   private showNameInput?: boolean;
   private appTheme?: "dark" | "light";
+  private authWindow?: "same" | "popup";
   private checkState?: string;
 
   constructor(props: EventLinkWindowProps) {
@@ -37,6 +30,7 @@ export class EventLinkWindow {
     this.selectedConnection = props.selectedConnection;
     this.showNameInput = props.showNameInput;
     this.appTheme = props.appTheme;
+    this.authWindow = props.authWindow;
     this.checkState = props.checkState;
   }
 
@@ -48,6 +42,12 @@ export class EventLinkWindow {
   }
 
   private _buildPayload() {
+    // Capability flag sent to the auth iframe. When true, the iframe
+    // uses the same-window OAuth redirect flow; when false, it falls
+    // back to window.open popup. Defaults to same-window; consumers
+    // can opt into popups by passing authWindow: 'popup'.
+    const oauthRedirect = this.authWindow !== "popup";
+
     return {
       linkTokenEndpoint: this.linkTokenEndpoint,
       linkHeaders: this.linkHeaders,
@@ -58,7 +58,7 @@ export class EventLinkWindow {
       showNameInput: this.showNameInput,
       appTheme: this.appTheme,
       // Internal — tells the iframe what the parent supports
-      capabilities: PACKAGE_CAPABILITIES,
+      capabilities: { oauthRedirect },
       // Internal — when present, iframe goes straight to status check
       checkState: this.checkState,
     };
