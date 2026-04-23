@@ -144,13 +144,13 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
       // User clicked X. Tear down everything. If onSuccess/onError
       // hasn't fired yet (user dismissed during polling), fire
       // onClose so the consumer knows the user bailed.
-      if (!resultDelivered) {
+      // if (!resultDelivered) {
         try {
           props.onClose?.();
         } catch {
           /* ignore */
         }
-      }
+      // }
       cleanup();
     }
   };
