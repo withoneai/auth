@@ -100,6 +100,20 @@ export function ConnectIntegrationButton() {
 | `onError` | `(error) => void` | Callback when the connection fails |
 | `onClose` | `() => void` | Callback when the modal is closed |
 
+### Auth window mode
+
+By default the OAuth provider opens via a top-level redirect (`authWindow: "same"`) and returns the user to your page when they finish — this avoids popup blockers and works reliably across mobile browsers.
+
+If a full-page redirect doesn't fit your app (e.g. you'd lose unsaved state), pass `authWindow: "popup"` to open the provider in a separate window instead:
+
+```tsx
+const { open } = useOneAuth({
+  token: { url: "https://your-domain.com/api/one-auth" },
+  authWindow: "popup",
+  onSuccess: (connection) => console.log(connection),
+});
+```
+
 ## Backend Token Generation
 
 To enable Auth connections, your backend needs an endpoint that generates a session token by calling the One API.
