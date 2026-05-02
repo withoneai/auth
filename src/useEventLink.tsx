@@ -65,25 +65,18 @@ function injectReturnUrlIntoState(
 
 // ---- URL cleanup -----------------------------------------------------
 
-// Strips one_auth_state / one_auth_error from the address bar after a
-// same-window OAuth return.
+// Custom field on history.state where we stash the OAuth state token
+// after stripping it from the URL. Namespaced so it cannot collide with
+// framework-internal fields (Next.js's __NA, etc.).
+const HISTORY_STATE_KEY = "__withone_auth_state";
+const HISTORY_ERROR_KEY = "__withone_auth_error";
+
+// Strips one_auth_state / one_auth_error from the address bar.
 //
-// Why this is more than a replaceState call: framework routers
-// (Next.js App Router, Vue Router, SvelteKit, Angular Router, etc.)
-// maintain their own URL state independent of window.history. A bare
-// history.replaceState updates the browser URL but the router still
-// holds the original query in its internal cache. The next router
-// navigation can then restore the stripped params, looping the user
-// back into the OAuth-return flow (the iframe re-detects the state
-// param and re-opens). We saw this with Next.js 16: after replaceState
-// alone, a router.push to the current path would re-apply ?one_auth_state.
-//
-// The fix is to dispatch a popstate event after replaceState. popstate
-// is the universal "the URL changed underneath you, please re-sync"
-// signal — every major framework router listens for it. It's also a
-// no-op in vanilla pages and in frameworks that don't subscribe.
-// Native browser back/forward already triggers popstate, so frameworks
-// must already handle it idempotently.
+// Used for late cleanup (e.g. after EXIT_EVENT_LINK or as defense-in-
+// depth when the early stash path didn't run). The early-detect flow
+// in detectOAuthReturn() does its own strip + history.state stash and
+// is the primary mechanism — see the comment block on detectOAuthReturn.
 function stripReturnParamsFromUrl() {
   if (typeof window === "undefined") return;
   try {
@@ -98,19 +91,15 @@ function stripReturnParamsFromUrl() {
       changed = true;
     }
     if (!changed) return;
-    window.history.replaceState({}, document.title, url.toString());
-    // Tell any framework router (Next.js, Vue, Svelte, Angular, React
-    // Router, etc.) that the URL changed via replaceState so it can
-    // re-sync from window.location. Without this the router keeps the
-    // stale query in its cache and can re-apply it on the next push.
-    try {
-      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
-    } catch {
-      // PopStateEvent constructor is supported in all modern browsers,
-      // but be defensive — a failed dispatch must not break the flow.
-    }
+    // Pass null state. This deliberately does NOT carry forward the
+    // existing window.history.state (which may contain framework-
+    // internal markers like Next.js's __NA). Carrying __NA would cause
+    // Next.js's patched replaceState to short-circuit and skip its
+    // ACTION_RESTORE dispatch, leaving its router cache stuck on the
+    // polluted URL — that was the exact bug we were chasing.
+    window.history.replaceState(null, document.title, url.toString());
   } catch {
-    // No-op: history.replaceState is best-effort cleanup.
+    // No-op
   }
 }
 
@@ -191,6 +180,29 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
     }
     checkWindow.closeLink();
     stripReturnParamsFromUrl();
+    // Wipe the history.state stash so a later remount of useEventLink
+    // doesn't re-detect this OAuth return and re-open the check iframe.
+    // The strip above handles URL params; this handles the stash.
+    try {
+      if (typeof window !== "undefined") {
+        const current = (window.history.state || {}) as Record<string, unknown>;
+        if (HISTORY_STATE_KEY in current || HISTORY_ERROR_KEY in current) {
+          const next = { ...current };
+          delete next[HISTORY_STATE_KEY];
+          delete next[HISTORY_ERROR_KEY];
+          // Replace with null when next is empty (was only our keys),
+          // otherwise carry forward whatever the framework had.
+          const cleaned = Object.keys(next).length === 0 ? null : next;
+          window.history.replaceState(
+            cleaned,
+            document.title,
+            window.location.href,
+          );
+        }
+      }
+    } catch {
+      // Best-effort
+    }
     // Reset the module-level guard so the NEXT OAuth flow on this page
     // can be detected. Without this, back-to-back OAuth flows in an
     // SPA (no full page reload between them) would silently skip the
@@ -218,10 +230,53 @@ function handleOAuthReturnError(props: EventLinkProps, errorMessage: string) {
   }, 0);
 }
 
+// Detects whether this page load is a same-window OAuth return.
+//
+// Two-source detection:
+//   1. window.history.state[HISTORY_STATE_KEY] — set by an earlier
+//      detect call on this same page load. We stash here so the state
+//      survives across re-renders of the hook without needing the URL
+//      to keep the param.
+//   2. window.location.search ?one_auth_state= / ?one_auth_error= —
+//      the canonical channel from the OAuth callback page.
+//
+// Why we stash into history.state and strip the URL IMMEDIATELY:
+//
+// Framework routers (Next.js App Router most notably) cache the route
+// entry under the URL the page first loaded with. If the page loads at
+// /agents/uuid?one_auth_state=abc, the cached entry's identity is that
+// polluted URL — and any later same-route navigation can resurrect it,
+// re-triggering OAuth-return detection and re-opening the check iframe.
+// We hit this loop when stripping AFTER LINK_SUCCESS/LINK_ERROR (too
+// late — the cache is already polluted).
+//
+// Stripping synchronously on first detection — before the user can do
+// anything — means the framework's first observation of this entry is
+// the clean URL. The state token rides safely in window.history.state,
+// which is a Web Standard, framework-invisible, and survives the
+// remaining lifetime of this history entry without polluting any URL.
 function detectOAuthReturn(props: EventLinkProps) {
   if (typeof window === "undefined") return;
   if (oauthReturnHandled) return;
 
+  // Source 1: history.state stash. If an earlier detect call on this
+  // page load already moved the params from the URL into history.state,
+  // pick them up from there.
+  const historyState = (window.history.state || {}) as Record<string, unknown>;
+  const stashedState = historyState[HISTORY_STATE_KEY] as string | undefined;
+  const stashedError = historyState[HISTORY_ERROR_KEY] as string | undefined;
+
+  if (stashedState || stashedError) {
+    oauthReturnHandled = true;
+    if (stashedState) {
+      handleOAuthReturn(props, stashedState);
+    } else if (stashedError) {
+      handleOAuthReturnError(props, stashedError);
+    }
+    return;
+  }
+
+  // Source 2: URL params. First detection on this page load.
   let params: URLSearchParams;
   try {
     params = new URLSearchParams(window.location.search);
@@ -233,25 +288,42 @@ function detectOAuthReturn(props: EventLinkProps) {
   const stateParam = params.get(RETURN_STATE_PARAM);
 
   // No return params — nothing to do.
-  if (!errorParam && !stateParam) {
-    return;
-  }
+  if (!errorParam && !stateParam) return;
 
   oauthReturnHandled = true;
 
-  // When the callback page redirects back with an error, the backend
-  // has already recorded the failure state. If we also have a state
-  // param, open the iframe in checkState mode — it will poll, see the
-  // failure, and render the "Connection failed" screen. This gives
-  // the user visual feedback and handles URL cleanup naturally when
-  // the iframe closes.
+  // Stash the params into history.state and strip them from the URL —
+  // synchronously, before any framework router caches this entry under
+  // the polluted URL. We pass null history state (instead of merging
+  // with the current state) because:
+  //   (a) the framework state for this entry was created against the
+  //       polluted URL and should be discarded;
+  //   (b) carrying Next.js's __NA marker forward would short-circuit
+  //       its patched replaceState and prevent its router cache from
+  //       updating — the exact bug we're fixing.
+  // Net effect: this single history entry becomes "external" from the
+  // framework's perspective. SPA navigations away from and back to this
+  // exact entry (rare — only via repeated browser-back) will hard
+  // reload, which is acceptable. SPA navigation to other entries is
+  // unaffected because the framework caches THOSE entries under their
+  // own clean URLs.
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete(RETURN_STATE_PARAM);
+    url.searchParams.delete(RETURN_ERROR_PARAM);
+    const stash: Record<string, string> = {};
+    if (stateParam) stash[HISTORY_STATE_KEY] = stateParam;
+    if (errorParam) stash[HISTORY_ERROR_KEY] = errorParam;
+    window.history.replaceState(stash, document.title, url.toString());
+  } catch {
+    // If the strip failed for some reason, fall through. The downstream
+    // handlers will still work; we just lose the cache-eviction property.
+  }
+
   if (stateParam) {
     handleOAuthReturn(props, stateParam);
     return;
   }
-
-  // Error without a state param — no iframe to open. Fall back to
-  // firing onError and stripping the URL.
   if (errorParam) {
     handleOAuthReturnError(props, errorParam);
   }
