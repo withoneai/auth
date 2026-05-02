@@ -65,6 +65,25 @@ function injectReturnUrlIntoState(
 
 // ---- URL cleanup -----------------------------------------------------
 
+// Strips one_auth_state / one_auth_error from the address bar after a
+// same-window OAuth return.
+//
+// Why this is more than a replaceState call: framework routers
+// (Next.js App Router, Vue Router, SvelteKit, Angular Router, etc.)
+// maintain their own URL state independent of window.history. A bare
+// history.replaceState updates the browser URL but the router still
+// holds the original query in its internal cache. The next router
+// navigation can then restore the stripped params, looping the user
+// back into the OAuth-return flow (the iframe re-detects the state
+// param and re-opens). We saw this with Next.js 16: after replaceState
+// alone, a router.push to the current path would re-apply ?one_auth_state.
+//
+// The fix is to dispatch a popstate event after replaceState. popstate
+// is the universal "the URL changed underneath you, please re-sync"
+// signal — every major framework router listens for it. It's also a
+// no-op in vanilla pages and in frameworks that don't subscribe.
+// Native browser back/forward already triggers popstate, so frameworks
+// must already handle it idempotently.
 function stripReturnParamsFromUrl() {
   if (typeof window === "undefined") return;
   try {
@@ -78,8 +97,17 @@ function stripReturnParamsFromUrl() {
       url.searchParams.delete(RETURN_ERROR_PARAM);
       changed = true;
     }
-    if (changed) {
-      window.history.replaceState({}, document.title, url.toString());
+    if (!changed) return;
+    window.history.replaceState({}, document.title, url.toString());
+    // Tell any framework router (Next.js, Vue, Svelte, Angular, React
+    // Router, etc.) that the URL changed via replaceState so it can
+    // re-sync from window.location. Without this the router keeps the
+    // stale query in its cache and can re-apply it on the next push.
+    try {
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    } catch {
+      // PopStateEvent constructor is supported in all modern browsers,
+      // but be defensive — a failed dispatch must not break the flow.
     }
   } catch {
     // No-op: history.replaceState is best-effort cleanup.
