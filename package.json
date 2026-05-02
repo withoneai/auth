@@ -1,6 +1,6 @@
 {
   "name": "@withone/auth",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "Frontend bindings for One Auth, a drop-in authentication widget that lets your users connect their third-party apps to your application. Supports OAuth and non-OAuth integrations across 250+ platforms with project-level multi-tenant configuration.",
   "files": [
     "dist",
