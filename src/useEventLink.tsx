@@ -24,13 +24,9 @@ const RETURN_ERROR_PARAM = "one_auth_error";
 // splitting is unambiguous.
 const STATE_SEPARATOR = "~";
 
-// sessionStorage key for the pending OAuth state, used to ferry the
-// state token across the hard reload that strips the URL. See the
-// comment block on detectOAuthReturn for the why.
-const PENDING_STORAGE_KEY = "__withone_auth_pending";
-// Pending entries older than this are treated as stale and discarded.
-// 10 minutes covers any realistic same-window OAuth flow with slack.
-const PENDING_TTL_MS = 10 * 60 * 1000;
+// (No persistent storage needed. State rides in the URL fragment, which
+// framework routers ignore for cache keys, so a synchronous strip via
+// replaceState is sufficient — no reload, no stash.)
 
 // ---- base64url helpers (no deps) -------------------------------------
 
@@ -167,113 +163,102 @@ function handleOAuthReturnError(props: EventLinkProps, errorMessage: string) {
 
 // Detects whether this page load is a same-window OAuth return.
 //
-// Why we use sessionStorage + a hard reload (window.location.replace)
-// instead of just stripping the URL with replaceState:
+// State channel: the OAuth callback page redirects back to the parent
+// app with state encoded in the URL FRAGMENT (e.g. /agents/uuid#one_auth_state=abc),
+// not the query string. Why fragments:
 //
-// Framework routers (Next.js App Router, etc.) cache the route entry
-// under the URL the page first loaded with. If the page loads at
-// /agents/uuid?one_auth_state=abc, the cached entry's identity is that
-// polluted URL. Any later same-route navigation (e.g. router.push("/")
-// after closing a settings modal) can resurrect the cached URL — re-
-// triggering OAuth-return detection and re-opening the check iframe.
+//   - Fragments never reach the server (HTTP spec) so they don't appear
+//     in server logs / analytics — small security win over ?one_auth_state.
+//   - Fragments are not part of the cache key for any major SPA router
+//     (Next.js App Router's Router Cache keys on pathname + query;
+//     Vue Router, React Router, SvelteKit, Angular Router all treat
+//     hash as a separate property orthogonal to routing). So stripping
+//     the fragment via history.replaceState does NOT need to fight a
+//     framework cache.
 //
-// We confirmed this with a logged trace: after replaceState alone (and
-// even replaceState + history.state stash), Next.js's pushState would
-// reintroduce ?one_auth_state on the next router.push.
+// Backward compatibility: we ALSO read from window.location.search so
+// older deployments of the OAuth callback page (pre-fragment switch)
+// keep working. The fragment path is preferred because it doesn't
+// pollute the framework router's cached URL.
 //
-// The fix: do a full-page navigation to the clean URL so the framework
-// rebuilds its cache from scratch with the clean URL as the entry's
-// identity. The OAuth state token rides across the reload in
-// sessionStorage — same-origin, tab-scoped, framework-invisible.
+// We strip whichever channel the params arrived on, synchronously,
+// before opening the check iframe. A subsequent router.push (e.g.
+// after the user opens and closes a settings modal) lands on the
+// clean URL with no risk of resurrecting the params.
 function detectOAuthReturn(props: EventLinkProps) {
   if (typeof window === "undefined") return;
   if (oauthReturnHandled) return;
 
-  // Source 1: sessionStorage. We landed here AFTER a hard reload
-  // initiated by an earlier detect call on the polluted URL. Pick up
-  // the state from storage, consume it, and proceed.
-  let pending: { state?: string; error?: string; at?: number } | null = null;
+  // Read the fragment. window.location.hash includes the leading "#",
+  // which URLSearchParams handles fine when we strip it.
+  let fragmentParams: URLSearchParams | null = null;
   try {
-    const raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
-    if (raw) pending = JSON.parse(raw);
+    const rawHash = window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    if (rawHash) fragmentParams = new URLSearchParams(rawHash);
   } catch {
-    pending = null;
-  }
-  if (pending) {
-    // Always consume — single-shot. Even if it's stale, get rid of it
-    // so a future page load doesn't pick it up.
-    try {
-      window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-    const fresh =
-      typeof pending.at === "number" &&
-      Date.now() - pending.at < PENDING_TTL_MS;
-    if (fresh && (pending.state || pending.error)) {
-      oauthReturnHandled = true;
-      if (pending.state) {
-        handleOAuthReturn(props, pending.state);
-      } else if (pending.error) {
-        handleOAuthReturnError(props, pending.error);
-      }
-      return;
-    }
+    fragmentParams = null;
   }
 
-  // Source 2: URL params. First detection on this page load.
-  let params: URLSearchParams;
+  // Read the query string (legacy / backward-compatible channel).
+  let queryParams: URLSearchParams | null = null;
   try {
-    params = new URLSearchParams(window.location.search);
+    queryParams = new URLSearchParams(window.location.search);
   } catch {
-    return;
+    queryParams = null;
   }
 
-  const errorParam = params.get(RETURN_ERROR_PARAM);
-  const stateParam = params.get(RETURN_STATE_PARAM);
+  // Prefer fragment values, fall back to query. Either channel works
+  // identically for the consumer; the package handles the cleanup.
+  const stateParam =
+    fragmentParams?.get(RETURN_STATE_PARAM) ??
+    queryParams?.get(RETURN_STATE_PARAM) ??
+    null;
+  const errorParam =
+    fragmentParams?.get(RETURN_ERROR_PARAM) ??
+    queryParams?.get(RETURN_ERROR_PARAM) ??
+    null;
 
-  // No return params — nothing to do.
-  if (!errorParam && !stateParam) return;
+  // No return params anywhere — nothing to do.
+  if (!stateParam && !errorParam) return;
 
   oauthReturnHandled = true;
 
-  // Stash to sessionStorage and hard-reload to the clean URL. We must
-  // NOT call handleOAuthReturn here — the iframe we'd open is about to
-  // be destroyed by the navigation. Stash, redirect, return.
-  try {
-    window.sessionStorage.setItem(
-      PENDING_STORAGE_KEY,
-      JSON.stringify({
-        state: stateParam || undefined,
-        error: errorParam || undefined,
-        at: Date.now(),
-      }),
-    );
-  } catch {
-    // sessionStorage unavailable (private mode in some browsers, quota
-    // full, etc.). Fall through and let the consumer handle the OAuth
-    // return on the polluted URL — same behavior as pre-fix versions.
-    return;
-  }
-
+  // Strip our params from BOTH channels synchronously, before any
+  // framework code observes the polluted URL. We're calling the
+  // browser-native replaceState here (the framework's patched version,
+  // if any, will pick it up via its own observer hooks).
   try {
     const url = new URL(window.location.href);
+
+    // Remove from query (always safe even if absent).
     url.searchParams.delete(RETURN_STATE_PARAM);
     url.searchParams.delete(RETURN_ERROR_PARAM);
-    // window.location.replace replaces the current history entry —
-    // there is no "back" entry pointing at the polluted URL after this.
-    // It's a same-origin navigation, so framework state is rebuilt from
-    // scratch on the clean URL.
-    window.location.replace(url.toString());
-  } catch {
-    // If URL construction failed, undo the stash to avoid a stale
-    // entry on the next visit.
-    try {
-      window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
-    } catch {
-      /* ignore */
+
+    // Wipe the entire fragment when our params arrived through it.
+    // We can't selectively remove just our keys: returning from OAuth
+    // is a major navigation event and any other fragment params are
+    // very likely stale — for example a deep-link convention like
+    // `#open=notion` that triggered the original AuthKit open. Leaving
+    // those in place causes consumers to auto-re-open AuthKit on top
+    // of our success/failure check iframe.
+    if (fragmentParams) {
+      url.hash = "";
     }
-    oauthReturnHandled = false;
+
+    window.history.replaceState(null, document.title, url.toString());
+  } catch {
+    // If URL surgery failed, fall through. The check iframe will still
+    // open below; the URL just stays polluted (same as pre-1.1.7).
+  }
+
+  if (stateParam) {
+    handleOAuthReturn(props, stateParam);
+    return;
+  }
+  if (errorParam) {
+    handleOAuthReturnError(props, errorParam);
   }
 }
 
