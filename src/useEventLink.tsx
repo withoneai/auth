@@ -63,6 +63,106 @@ function injectReturnUrlIntoState(
   }
 }
 
+// ---- Debug logging ---------------------------------------------------
+
+// Off by default. Toggle with ?one_auth_debug=1 in the URL or
+// `window.__withoneAuthDebug = true` in the console. Logs go to console
+// prefixed with [withone/auth] and a high-resolution timestamp so you
+// can correlate ordering with framework router events.
+function dbgEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const w = window as unknown as { __withoneAuthDebug?: boolean };
+    if (w.__withoneAuthDebug === true) return true;
+    return new URLSearchParams(window.location.search).has("one_auth_debug");
+  } catch {
+    return false;
+  }
+}
+
+function dbg(label: string, data?: unknown) {
+  if (!dbgEnabled()) return;
+  try {
+    const t = (typeof performance !== "undefined" ? performance.now() : Date.now()).toFixed(1);
+    if (data !== undefined) {
+      // eslint-disable-next-line no-console
+      console.log(`[withone/auth ${t}ms] ${label}`, data);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`[withone/auth ${t}ms] ${label}`);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+// One-time setup: install a MutationObserver-style URL watcher so we
+// can identify WHICH code path puts the OAuth state param back into
+// the URL after we've stripped it. This is a diagnostic — it does not
+// modify behavior.
+let urlWatcherInstalled = false;
+function installUrlWatcher() {
+  if (urlWatcherInstalled) return;
+  if (typeof window === "undefined") return;
+  if (!dbgEnabled()) return;
+  urlWatcherInstalled = true;
+
+  let lastHref = window.location.href;
+
+  const checkChange = (source: string) => {
+    const current = window.location.href;
+    if (current === lastHref) return;
+    const had = lastHref.includes(RETURN_STATE_PARAM) || lastHref.includes(RETURN_ERROR_PARAM);
+    const has = current.includes(RETURN_STATE_PARAM) || current.includes(RETURN_ERROR_PARAM);
+    dbg(`url change via ${source}`, { from: lastHref, to: current });
+    if (!had && has) {
+      // The param was NOT in the URL but is NOW. Whoever caused this
+      // change is the bug. Print a stack trace.
+      // eslint-disable-next-line no-console
+      console.warn("[withone/auth] OAUTH PARAM REINTRODUCED via " + source, {
+        from: lastHref,
+        to: current,
+        stack: new Error().stack,
+      });
+    }
+    lastHref = current;
+  };
+
+  // Patch pushState/replaceState to observe.
+  try {
+    const origPush = window.history.pushState.bind(window.history);
+    const origReplace = window.history.replaceState.bind(window.history);
+    window.history.pushState = function (data: unknown, unused: string, url?: string | null) {
+      const ret = origPush(data as never, unused, url ?? undefined);
+      checkChange("pushState");
+      return ret;
+    } as typeof window.history.pushState;
+    window.history.replaceState = function (data: unknown, unused: string, url?: string | null) {
+      const ret = origReplace(data as never, unused, url ?? undefined);
+      checkChange("replaceState");
+      return ret;
+    } as typeof window.history.replaceState;
+  } catch (e) {
+    dbg("failed to patch history methods", e);
+  }
+
+  // popstate covers back/forward and any synthetic dispatches.
+  window.addEventListener("popstate", () => checkChange("popstate"));
+
+  // hashchange too, just in case.
+  window.addEventListener("hashchange", () => checkChange("hashchange"));
+
+  // Tail watch every 250ms for the first 30 seconds — catches anything
+  // that bypasses history APIs entirely (rare, but worth seeing).
+  let ticks = 0;
+  const interval = setInterval(() => {
+    checkChange("poll");
+    if (++ticks > 120) clearInterval(interval);
+  }, 250);
+
+  dbg("url watcher installed", { initial: lastHref });
+}
+
 // ---- URL cleanup -----------------------------------------------------
 
 // Custom field on history.state where we stash the OAuth state token
@@ -98,6 +198,7 @@ function stripReturnParamsFromUrl() {
     // ACTION_RESTORE dispatch, leaving its router cache stuck on the
     // polluted URL — that was the exact bug we were chasing.
     window.history.replaceState(null, document.title, url.toString());
+    dbg("late strip: URL stripped to", url.toString());
   } catch {
     // No-op
   }
@@ -138,6 +239,7 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
     if (!eventData?.messageType) return;
 
     if (eventData.messageType === "LINK_SUCCESS") {
+      dbg("checkIframe LINK_SUCCESS", { url: window.location.href });
       if (!resultDelivered) {
         resultDelivered = true;
         try {
@@ -148,6 +250,7 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
         stripReturnParamsFromUrl();
       }
     } else if (eventData.messageType === "LINK_ERROR") {
+      dbg("checkIframe LINK_ERROR", { msg: eventData.message, url: window.location.href });
       if (!resultDelivered) {
         resultDelivered = true;
         try {
@@ -158,6 +261,7 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
         stripReturnParamsFromUrl();
       }
     } else if (eventData.messageType === "EXIT_EVENT_LINK") {
+      dbg("checkIframe EXIT_EVENT_LINK", { url: window.location.href });
       // User clicked X. Tear down everything. If onSuccess/onError
       // hasn't fired yet (user dismissed during polling), fire
       // onClose so the consumer knows the user bailed.
@@ -198,6 +302,10 @@ function handleOAuthReturn(props: EventLinkProps, state: string) {
             document.title,
             window.location.href,
           );
+          dbg("cleanup: wiped history.state stash", {
+            url: window.location.href,
+            historyStateAfter: window.history.state,
+          });
         }
       }
     } catch {
@@ -267,6 +375,7 @@ function detectOAuthReturn(props: EventLinkProps) {
   const stashedError = historyState[HISTORY_ERROR_KEY] as string | undefined;
 
   if (stashedState || stashedError) {
+    dbg("detect via history.state", { stashedState, stashedError, url: window.location.href });
     oauthReturnHandled = true;
     if (stashedState) {
       handleOAuthReturn(props, stashedState);
@@ -289,6 +398,13 @@ function detectOAuthReturn(props: EventLinkProps) {
 
   // No return params — nothing to do.
   if (!errorParam && !stateParam) return;
+
+  dbg("detect via URL", {
+    stateParam,
+    errorParam,
+    url: window.location.href,
+    historyStateBefore: window.history.state,
+  });
 
   oauthReturnHandled = true;
 
@@ -315,7 +431,14 @@ function detectOAuthReturn(props: EventLinkProps) {
     if (stateParam) stash[HISTORY_STATE_KEY] = stateParam;
     if (errorParam) stash[HISTORY_ERROR_KEY] = errorParam;
     window.history.replaceState(stash, document.title, url.toString());
-  } catch {
+    dbg("stashed + stripped", {
+      newUrl: url.toString(),
+      stash,
+      historyStateAfter: window.history.state,
+      locationHref: window.location.href,
+    });
+  } catch (e) {
+    dbg("stash/strip FAILED", e);
     // If the strip failed for some reason, fall through. The downstream
     // handlers will still work; we just lose the cache-eviction property.
   }
@@ -332,6 +455,18 @@ function detectOAuthReturn(props: EventLinkProps) {
 // ---- Main hook -------------------------------------------------------
 
 export const useEventLink = (props: EventLinkProps) => {
+  // Install URL watcher (one-shot, debug-only) before we run any
+  // detection so we observe every change the rest of the page makes.
+  installUrlWatcher();
+
+  if (typeof window !== "undefined") {
+    dbg("useEventLink render", {
+      url: window.location.href,
+      historyState: window.history.state,
+      oauthReturnHandled,
+    });
+  }
+
   // Detect OAuth return on every call. The module-level guard ensures
   // we only actually process a return once per page load, even if the
   // hook is called from multiple components or re-renders.
