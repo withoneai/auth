@@ -11,22 +11,28 @@ const MESSAGE_EXPIRY_MS = 5000;
 // return.
 let oauthReturnHandled = false;
 
-// Query param names used by the same-window OAuth redirect flow.
-// These appear on the parent app's URL after the user comes back from
-// the OAuth provider. The package detects them on init, processes the
-// result, and strips them from the URL.
-const RETURN_STATE_PARAM = "one_auth_state";
-const RETURN_ERROR_PARAM = "one_auth_error";
-
 // Separator used between the original OAuth state and the base64url
 // encoded return URL. Tilde is in the URL "unreserved" set so it
 // survives URL encoding intact, and it's not used by base64url so
 // splitting is unambiguous.
 const STATE_SEPARATOR = "~";
 
-// sessionStorage key for the pending OAuth state, used to ferry the
-// state token across the hard reload that strips the URL. See the
-// comment block on detectOAuthReturn for the why.
+// SDK version tag appended as the third segment of the OAuth state.
+// The One-hosted callback parses this to decide whether to redirect
+// back with a clean URL (v3+) or with the legacy ?one_auth_state=
+// query parameter (older SDKs that detect the return via the URL).
+// Bumping this string is a wire-protocol change \u2014 the callback page
+// in core-ui must understand the new tag before the SDK starts
+// emitting it.
+const SDK_VERSION_TAG = "v3";
+
+// sessionStorage key for the pending OAuth state. Set on cue.app
+// BEFORE the top-level navigation to the OAuth provider; read on
+// return. sessionStorage is scoped per (top-level browsing context,
+// origin), so the entry survives the cross-origin round-trip in the
+// same tab and is restored when the user returns to the tenant
+// origin. This replaces the v1.2.0 design which relied on a polluted
+// URL + hard reload.
 const PENDING_STORAGE_KEY = "__withone_auth_pending";
 // Pending entries older than this are treated as stale and discarded.
 // 10 minutes covers any realistic same-window OAuth flow with slack.
@@ -52,7 +58,14 @@ function injectReturnUrlIntoState(
   originalState: string,
   returnUrl: string
 ): string {
-  const newState = `${originalState}${STATE_SEPARATOR}${base64urlEncode(returnUrl)}`;
+  // State format (v3): ORIG ~ base64url(returnUrl) ~ v3
+  // Legacy v1.2.0 format was 2 segments without the version tag.
+  // The trailing version tag tells the One-hosted callback page to
+  // redirect back with a clean URL instead of appending
+  // ?one_auth_state= for URL-based detection.
+  const newState =
+    `${originalState}${STATE_SEPARATOR}${base64urlEncode(returnUrl)}` +
+    `${STATE_SEPARATOR}${SDK_VERSION_TAG}`;
   try {
     const parsed = new URL(oauthUrl);
     parsed.searchParams.set("state", newState);
@@ -165,33 +178,29 @@ function handleOAuthReturnError(props: EventLinkProps, errorMessage: string) {
   }, 0);
 }
 
-// Detects whether this page load is a same-window OAuth return.
+// Detects whether this page load is a same-window OAuth return by
+// reading sessionStorage on the tenant origin. The pending entry is
+// written by the OAUTH_REDIRECT handler BEFORE the top-level
+// navigation to the OAuth provider; it survives the cross-origin
+// round-trip because sessionStorage is scoped per (top-level
+// browsing context, origin) and the user returns to the same tab on
+// the same tenant origin.
 //
-// Why we use sessionStorage + a hard reload (window.location.replace)
-// instead of just stripping the URL with replaceState:
+// The URL is never read here. The One-hosted callback page (core-ui
+// app/connections/oauth/callback) redirects the user back to a clean
+// URL when it sees an SDK version tag of v3+ in the OAuth state, so
+// there is nothing to detect on the URL. This eliminates the v1.2.0
+// hard reload (window.location.replace) that existed only to strip a
+// polluted URL before the framework router cached it.
 //
-// Framework routers (Next.js App Router, etc.) cache the route entry
-// under the URL the page first loaded with. If the page loads at
-// /agents/uuid?one_auth_state=abc, the cached entry's identity is that
-// polluted URL. Any later same-route navigation (e.g. router.push("/")
-// after closing a settings modal) can resurrect the cached URL — re-
-// triggering OAuth-return detection and re-opening the check iframe.
-//
-// We confirmed this with a logged trace: after replaceState alone (and
-// even replaceState + history.state stash), Next.js's pushState would
-// reintroduce ?one_auth_state on the next router.push.
-//
-// The fix: do a full-page navigation to the clean URL so the framework
-// rebuilds its cache from scratch with the clean URL as the entry's
-// identity. The OAuth state token rides across the reload in
-// sessionStorage — same-origin, tab-scoped, framework-invisible.
+// Backwards compatibility: tenants on v1.2.0 emit a 2-segment state
+// without the v3 tag, so the callback falls back to its legacy
+// ?one_auth_state= redirect for them. v1.3.0 SDKs ignore that param
+// entirely \u2014 the source of truth is sessionStorage.
 function detectOAuthReturn(props: EventLinkProps) {
   if (typeof window === "undefined") return;
   if (oauthReturnHandled) return;
 
-  // Source 1: sessionStorage. We landed here AFTER a hard reload
-  // initiated by an earlier detect call on the polluted URL. Pick up
-  // the state from storage, consume it, and proceed.
   let pending: { state?: string; error?: string; at?: number } | null = null;
   try {
     const raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
@@ -199,81 +208,26 @@ function detectOAuthReturn(props: EventLinkProps) {
   } catch {
     pending = null;
   }
-  if (pending) {
-    // Always consume — single-shot. Even if it's stale, get rid of it
-    // so a future page load doesn't pick it up.
-    try {
-      window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-    const fresh =
-      typeof pending.at === "number" &&
-      Date.now() - pending.at < PENDING_TTL_MS;
-    if (fresh && (pending.state || pending.error)) {
-      oauthReturnHandled = true;
-      if (pending.state) {
-        handleOAuthReturn(props, pending.state);
-      } else if (pending.error) {
-        handleOAuthReturnError(props, pending.error);
-      }
-      return;
-    }
+  if (!pending) return;
+
+  // Single-shot: always consume the entry, even if stale, so a later
+  // page load doesn't pick it up.
+  try {
+    window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+  } catch {
+    /* ignore */
   }
 
-  // Source 2: URL params. First detection on this page load.
-  let params: URLSearchParams;
-  try {
-    params = new URLSearchParams(window.location.search);
-  } catch {
-    return;
-  }
+  const fresh =
+    typeof pending.at === "number" && Date.now() - pending.at < PENDING_TTL_MS;
+  if (!fresh) return;
 
-  const errorParam = params.get(RETURN_ERROR_PARAM);
-  const stateParam = params.get(RETURN_STATE_PARAM);
-
-  // No return params — nothing to do.
-  if (!errorParam && !stateParam) return;
-
-  oauthReturnHandled = true;
-
-  // Stash to sessionStorage and hard-reload to the clean URL. We must
-  // NOT call handleOAuthReturn here — the iframe we'd open is about to
-  // be destroyed by the navigation. Stash, redirect, return.
-  try {
-    window.sessionStorage.setItem(
-      PENDING_STORAGE_KEY,
-      JSON.stringify({
-        state: stateParam || undefined,
-        error: errorParam || undefined,
-        at: Date.now(),
-      }),
-    );
-  } catch {
-    // sessionStorage unavailable (private mode in some browsers, quota
-    // full, etc.). Fall through and let the consumer handle the OAuth
-    // return on the polluted URL — same behavior as pre-fix versions.
-    return;
-  }
-
-  try {
-    const url = new URL(window.location.href);
-    url.searchParams.delete(RETURN_STATE_PARAM);
-    url.searchParams.delete(RETURN_ERROR_PARAM);
-    // window.location.replace replaces the current history entry —
-    // there is no "back" entry pointing at the polluted URL after this.
-    // It's a same-origin navigation, so framework state is rebuilt from
-    // scratch on the clean URL.
-    window.location.replace(url.toString());
-  } catch {
-    // If URL construction failed, undo the stash to avoid a stale
-    // entry on the next visit.
-    try {
-      window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-    oauthReturnHandled = false;
+  if (pending.state) {
+    oauthReturnHandled = true;
+    handleOAuthReturn(props, pending.state);
+  } else if (pending.error) {
+    oauthReturnHandled = true;
+    handleOAuthReturnError(props, pending.error);
   }
 }
 
@@ -340,6 +294,31 @@ export const useEventLink = (props: EventLinkProps) => {
           oauthState,
           returnUrl
         );
+
+        // Stash the OAuth state to sessionStorage BEFORE leaving the
+        // page. sessionStorage is scoped per (top-level browsing
+        // context, origin), so this entry survives the cross-origin
+        // round-trip through the OAuth provider and the One-hosted
+        // callback, and is restored when the user returns to this
+        // tenant origin in the same tab. detectOAuthReturn reads it
+        // on hook mount post-return.
+        //
+        // If the write throws (private mode, quota, disabled storage),
+        // we still navigate \u2014 the user gets the connection created
+        // server-side but won't see the success modal. Tenant query
+        // refetch (e.g. React Query refetchOnWindowFocus) will surface
+        // the new connection in their list within a moment.
+        try {
+          window.sessionStorage.setItem(
+            PENDING_STORAGE_KEY,
+            JSON.stringify({
+              state: oauthState,
+              at: Date.now(),
+            })
+          );
+        } catch {
+          /* sessionStorage unavailable \u2014 navigate anyway */
+        }
 
         // Detach our message listener but keep the iframe visible.
         // The page navigation will destroy it naturally when the
