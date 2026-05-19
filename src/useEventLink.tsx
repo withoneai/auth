@@ -11,6 +11,12 @@ const MESSAGE_EXPIRY_MS = 5000;
 // return.
 let oauthReturnHandled = false;
 
+// Module-level reference to the most recently registered pageshow
+// handler. Survives across useEventLink calls so we can de-duplicate
+// listeners. open() replaces it; close() tears it down.
+let pageshowHandler: ((e: PageTransitionEvent) => void) | null = null;
+
+
 // Separator used between the original OAuth state and the base64url
 // encoded return URL. Tilde is in the URL "unreserved" set so it
 // survives URL encoding intact, and it's not used by base64url so
@@ -218,6 +224,45 @@ function detectOAuthReturn(props: EventLinkProps) {
     /* ignore */
   }
 
+  // Cancel detection. performance.navigation.type === "back_forward"
+  // is set when the user arrived at this page via the browser back/
+  // forward button. The OAuth success path arrives via the One-hosted
+  // callback's redirect, which is type "navigate" — so the two paths
+  // are cleanly distinguishable.
+  //
+  // Works in BOTH cases:
+  //   - bfcache enabled (prod): pageshow listener calls this function
+  //     after the page is restored; navigationType is "back_forward"
+  //   - bfcache disabled (Next.js dev, etc.): page reloads fresh,
+  //     detectOAuthReturn runs from the initial render;
+  //     navigationType is also "back_forward"
+  //
+  // On cancel: tear down the iframe (no-op if already destroyed by
+  // the reload) and fire onClose. The user can retry by re-opening
+  // the modal — that gets them a fresh OAuth request, avoiding the
+  // "not in pending state" backend error from re-authorizing the
+  // same requestId.
+  let navigationType: string | undefined;
+  try {
+    const entries = performance.getEntriesByType("navigation");
+    navigationType = (entries[0] as PerformanceNavigationTiming | undefined)
+      ?.type;
+  } catch {
+    /* performance API unavailable — fall through to normal handling */
+  }
+  if (navigationType === "back_forward") {
+    const iframe = document.getElementById(VISIBLE_IFRAME_ID);
+    if (iframe) iframe.remove();
+    setTimeout(() => {
+      try {
+        props.onClose?.();
+      } catch {
+        /* consumer callback errors are not our problem */
+      }
+    }, 0);
+    return;
+  }
+
   const fresh =
     typeof pending.at === "number" && Date.now() - pending.at < PENDING_TTL_MS;
   if (!fresh) return;
@@ -350,6 +395,54 @@ export const useEventLink = (props: EventLinkProps) => {
     if (typeof window !== "undefined") {
       window.addEventListener("message", messageHandler);
       isListenerActive = true;
+
+      // bfcache scenario: when the browser restores a cached page on
+      // back navigation, React doesn't re-render so detectOAuthReturn
+      // doesn't auto-fire. This pageshow listener wakes it up.
+      //
+      // We use TWO signals because they each cover a different case:
+      //   • event.persisted=true (set by spec on bfcache restore) is
+      //     the definitive bfcache signal. Always reliable.
+      //   • Otherwise, fall through to detectOAuthReturn, which uses
+      //     navigation.type === "back_forward" — the right signal for
+      //     full-reload back navigation (no bfcache).
+      //
+      // Both paths converge on the same cancel logic. sessionStorage
+      // is consumed atomically, so even if both fire, only one acts.
+      if (pageshowHandler) {
+        window.removeEventListener("pageshow", pageshowHandler);
+      }
+      pageshowHandler = (e: PageTransitionEvent) => {
+        if (e.persisted) {
+          // bfcache restore — pageshow guarantees this is back/forward
+          // navigation. Don't rely on performance.navigation.type here
+          // because browser behavior on bfcache restore varies.
+          let raw: string | null = null;
+          try {
+            raw = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
+          if (!raw) return;
+          try {
+            window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
+          const iframe = document.getElementById(VISIBLE_IFRAME_ID);
+          if (iframe) iframe.remove();
+          try {
+            props.onClose?.();
+          } catch {
+            /* consumer callback errors are not our problem */
+          }
+          return;
+        }
+        // Fresh load (no bfcache). detectOAuthReturn's navigationType
+        // check handles the back-button case here.
+        detectOAuthReturn(props);
+      };
+      window.addEventListener("pageshow", pageshowHandler);
     }
 
     linkWindow.openLink();
@@ -361,6 +454,12 @@ export const useEventLink = (props: EventLinkProps) => {
       window.removeEventListener("message", messageHandler);
       isListenerActive = false;
       messageHandler = null;
+    }
+    // Tear down the pageshow handler too — nothing to cancel once
+    // the modal is closed.
+    if (typeof window !== "undefined" && pageshowHandler) {
+      window.removeEventListener("pageshow", pageshowHandler);
+      pageshowHandler = null;
     }
     // Only clear the EXIT dedup key so re-opening works immediately.
     // LINK_SUCCESS / LINK_ERROR dedup keys stay to prevent duplicate callbacks.
