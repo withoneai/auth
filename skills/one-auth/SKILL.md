@@ -451,7 +451,8 @@ interface AuthProps {
   imageUrl?: string;         // Company logo URL
   companyName?: string;      // Company name displayed in modal
   selectedConnection?: string; // Pre-select an integration by display name
-  showNameInput?: boolean;   // Show name input for the connection
+  showName?: boolean;        // Show a name input so the user can label the connection. Default: false
+  authWindow?: "same" | "popup"; // How the OAuth provider opens. Default: "same" (top-level redirect)
   onSuccess?: (connection: ConnectionRecord) => void;
   onError?: (error: string) => void;
   onClose?: () => void;

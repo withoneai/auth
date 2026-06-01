@@ -14,7 +14,7 @@ export class EventLinkWindow {
   private imageUrl?: string;
   private companyName?: string;
   private selectedConnection?: string;
-  private showNameInput?: boolean;
+  private showName?: boolean;
   private appTheme?: "dark" | "light";
   private authWindow?: "same" | "popup";
   private checkState?: string;
@@ -28,7 +28,9 @@ export class EventLinkWindow {
     this.imageUrl = props.imageUrl;
     this.companyName = props.companyName;
     this.selectedConnection = props.selectedConnection;
-    this.showNameInput = props.showNameInput;
+    // `showName` is the current prop; `showNameInput` is the deprecated
+    // former name, still accepted for backward compatibility.
+    this.showName = props.showName ?? props.showNameInput;
     this.appTheme = props.appTheme;
     this.authWindow = props.authWindow;
     this.checkState = props.checkState;
@@ -55,7 +57,7 @@ export class EventLinkWindow {
       imageUrl: this.imageUrl,
       companyName: this.companyName,
       selectedConnection: this.selectedConnection,
-      showNameInput: this.showNameInput,
+      showName: this.showName,
       appTheme: this.appTheme,
       // Internal — tells the iframe what the parent supports
       capabilities: { oauthRedirect },
