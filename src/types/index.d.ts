@@ -8,6 +8,8 @@ export interface EventLinkProps {
   onSuccess?: (connection: ConnectionRecord) => void;
   onError?: (error: string) => void;
   selectedConnection?: string;
+  showName?: boolean;
+  /** @deprecated Use `showName`. Still honored for backward compatibility; will be removed in a future major. */
   showNameInput?: boolean;
   // Controls how the third-party OAuth provider is opened.
   // 'same' (default): navigate the top-level window to the provider
@@ -33,6 +35,8 @@ export interface EventLinkWindowProps {
   companyName?: string;
   onClose?: () => void;
   selectedConnection?: string;
+  showName?: boolean;
+  /** @deprecated Use `showName`. Still honored for backward compatibility; will be removed in a future major. */
   showNameInput?: boolean;
   authWindow?: 'same' | 'popup';
   token: {

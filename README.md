@@ -91,6 +91,7 @@ export function ConnectIntegrationButton() {
 | `token.url` | `string` | Full URL of your backend token endpoint |
 | `token.headers` | `object` | Headers to send with the token request (e.g., user ID) |
 | `selectedConnection` | `string` | Pre-select an integration by display name (e.g., `"Gmail"`) |
+| `showName` | `boolean` | Show a name input field so the user can label the connection (helpful when one user has multiple accounts on the same platform). Default: `false`. |
 | `appTheme` | `"dark" \| "light"` | Theme for the Auth modal |
 | `title` | `string` | Custom title for the modal |
 | `imageUrl` | `string` | Custom logo URL to display in the modal |
