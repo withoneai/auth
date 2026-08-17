@@ -3,18 +3,9 @@
  *
  * The SDK deliberately knows nothing about OAuth internals: state, PKCE
  * and the client secret live on the consumer's backend (see README).
- * The SDK only opens the consumer's authorize route in a first-party
- * browsing context and reports how the flow ended.
+ * The SDK only opens One's connect experience as a modal over the host
+ * page and reports how the flow ended.
  */
-
-/** How the One window is opened. "iframe" is a deprecated alias of
- *  "modal" (same behavior). */
-export type OneConnectWindowMode =
-  | "auto"
-  | "modal"
-  | "popup"
-  | "redirect"
-  | "iframe";
 
 /** Result posted back from the consumer's completion page. */
 export interface OneConnectResult {
@@ -28,23 +19,11 @@ export interface OneConnectProps {
    * The consumer's OWN backend route that starts the flow. It must
    * generate `state` + PKCE, set them in an httpOnly cookie, and 302
    * to One's /oauth/authorize (full recipe in the README). Must be an
-   * absolute URL — the popup/redirect is a top-level navigation.
+   * absolute URL.
    */
   authorize: {
     url: string;
   };
-  /**
-   * "modal"    — One's card floats over your page, which stays visible
-   *              and dimmed (rendered in a transparent iframe under the
-   *              hood). Requires same-site embedding or CHIPS cookies —
-   *              see the README's transport notes. ("iframe" is a
-   *              deprecated alias.)
-   * "popup"    — floating window over the dimmed host page.
-   * "redirect" — same-tab navigation there and back (mobile standard).
-   * "auto"     — popup on desktop, redirect on small/coarse-pointer
-   *              devices. Default.
-   */
-  window?: OneConnectWindowMode;
   /** Forwarded to the authorize route as ?one_theme= so the backend can
    *  pass it through to One's connect page. */
   appTheme?: "dark" | "light";
@@ -53,19 +32,18 @@ export interface OneConnectProps {
   onSuccess?: () => void;
   /** Fired when the completion page reports an error. */
   onError?: (error: string) => void;
-  /** Fired when the user abandons the flow (closes the popup or the
-   *  overlay's cancel button) without a result. */
+  /** Fired when the user closes the card without a result. */
   onClose?: () => void;
 }
 
 export interface OneConnectHandle {
-  /** Opens the One window (or navigates, in redirect mode). */
+  /** Opens One's connect modal over the current page. */
   open: () => void;
-  /** Tears everything down: popup, overlay, listeners. */
+  /** Tears everything down: modal frame + listeners. */
   close: () => void;
 }
 
-/** Message posted from the completion page to the opener (popup mode). */
+/** Message posted from the completion page up to the host page. */
 export interface OneConnectMessage {
   type: string; // MESSAGE_TYPE constant
   status: "success" | "error";

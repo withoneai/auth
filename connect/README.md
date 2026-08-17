@@ -23,7 +23,7 @@ connections **in your user's own One account** and hands you a scoped grant.
 your app (browser)      your backend             One
 ─────────────────       ────────────             ───
 useOneConnect().open()
-   │  popup/redirect →  GET /api/one/authorize
+   │  modal opens ───►  GET /api/one/authorize
    │                       state + PKCE, cookie
    │                       302 ─────────────────► /oauth/authorize
    │                                              user signs in (email code),
@@ -34,26 +34,19 @@ useOneConnect().open()
    │                       store tokens      ◄─── access (1h) + refresh (30d)
    │                       302 → completion page
    ◄── completeOneConnect() closes the loop
-onSuccess() fires
+onSuccess() fires, modal closes
 ```
 
-Three window modes:
+The SDK has a single presentation: an **authkit-style modal**. Your page
+stays visible and dimmed while One's card floats above it in a transparent,
+full-viewport iframe — responsive at every screen size, mobile included.
 
-- **`modal`** — authkit-style: your page stays visible and dimmed while
-  One's card floats above it in a transparent iframe. The best-feeling mode —
-  with one transport constraint: the flow rides on the user's One session
-  cookie, which is third-party inside a cross-site iframe. Same-site setups
-  (e.g. localhost dev) work everywhere; cross-site production embedding needs
-  One's CHIPS (`Partitioned`) session cookies and a per-client
-  `frame-ancestors` allow-list on One's side. Use `popup`/`redirect` if you
-  can't accept that.
-- **`popup`** — a floating popup window over your dimmed page. Your page never
-  navigates and keeps all its state.
-- **`redirect`** — a same-tab trip to One and back to the exact page the user
-  started on. The default on mobile (popups become tabs there), and the most
-  bulletproof mode everywhere.
-
-`window: "auto"` (the default) picks popup on desktop and redirect on mobile.
+One transport note: the flow rides on the user's One session cookie, which
+is third-party inside a cross-site iframe. Same-site setups (e.g. localhost
+dev) work everywhere as-is; cross-site production embedding relies on One
+serving that cookie as `Partitioned` (CHIPS) and allowing your domain in its
+`frame-ancestors` policy — handled on One's side when your OAuth app's
+domains are registered.
 
 ---
 
@@ -111,11 +104,10 @@ export function ConnectWithOne() {
 | Option | Type | Description |
 |---|---|---|
 | `authorize.url` | `string` | Your backend route from step 4. Must be absolute. |
-| `window` | `"auto" \| "modal" \| "popup" \| "redirect"` | Default `"auto"`: popup on desktop, redirect on mobile. See the transport notes above for `modal`. (`"iframe"` still works as a deprecated alias of `"modal"`.) |
 | `appTheme` | `"dark" \| "light"` | The flow renders in the theme YOU pick — there is no user-facing toggle. Appended to your authorize route as `?one_theme=`; forward it to One (step 4). |
 | `onSuccess` | `() => void` | The grant completed and your server stored the tokens. |
 | `onError` | `(error: string) => void` | The flow failed. |
-| `onClose` | `() => void` | The user abandoned the flow. |
+| `onClose` | `() => void` | The user closed the card without finishing. |
 
 ## 4 · Backend: the authorize route
 
@@ -153,6 +145,9 @@ export async function GET(req: NextRequest) {
   }
   const theme = req.nextUrl.searchParams.get("one_theme");
   if (theme) url.searchParams.set("theme", theme);
+  // Forward this so One renders as a card over your (dimmed) page:
+  const embed = req.nextUrl.searchParams.get("one_embed");
+  if (embed) url.searchParams.set("embed", embed);
 
   const res = NextResponse.redirect(url.toString(), 302);
   res.cookies.set("one_tx", JSON.stringify({ state, verifier }), {
@@ -227,7 +222,8 @@ export async function GET(req: NextRequest) {
 
 ## 6 · Frontend: the completion page
 
-One line. Works for both popup and redirect modes.
+One line. It posts the result up to your page, which closes the modal and
+fires your `onSuccess`/`onError`.
 
 ```tsx
 // app/one/complete/page.tsx

@@ -88,7 +88,6 @@ import { useOneConnect } from "@withone/connect";
 export function ConnectWithOne() {
   const { open } = useOneConnect({
     authorize: { url: "https://yourapp.com/api/one/authorize" }, // your route, absolute
-    window: "modal",        // your page stays visible, dimmed, One's card on top
     appTheme: "light",      // or "dark" — you pick, matches YOUR app
     onSuccess: () => {
       // Your backend already has the tokens by the time this fires.
@@ -101,10 +100,9 @@ export function ConnectWithOne() {
 }
 ```
 
-`window` options: `"modal"` (recommended — card over your dimmed page),
-`"popup"` (separate small window), `"redirect"` (same-tab round trip; the
-mobile standard), `"auto"` (popup on desktop, redirect on mobile — the
-default).
+When the user clicks, your page stays visible and dims; One's card floats
+on top. Responsive at every screen size — desktop and mobile get the same
+experience.
 
 ## Step 2 · The authorize route (backend)
 
@@ -220,7 +218,7 @@ export async function GET(req: NextRequest) {
 ## Step 4 · The completion page (frontend)
 
 One line. It tells the SDK the flow finished, so the modal closes and your
-`onSuccess` fires. Works for every window mode.
+`onSuccess` fires.
 
 ```tsx
 // app/one/complete/page.tsx
