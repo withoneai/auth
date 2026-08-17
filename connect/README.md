@@ -39,7 +39,7 @@ onSuccess() fires
 
 Three window modes:
 
-- **`iframe`** — authkit-style: your page stays visible and dimmed while
+- **`modal`** — authkit-style: your page stays visible and dimmed while
   One's card floats above it in a transparent iframe. The best-feeling mode —
   with one transport constraint: the flow rides on the user's One session
   cookie, which is third-party inside a cross-site iframe. Same-site setups
@@ -111,7 +111,7 @@ export function ConnectWithOne() {
 | Option | Type | Description |
 |---|---|---|
 | `authorize.url` | `string` | Your backend route from step 4. Must be absolute. |
-| `window` | `"auto" \| "iframe" \| "popup" \| "redirect"` | Default `"auto"`: popup on desktop, redirect on mobile. See the transport notes above for `iframe`. |
+| `window` | `"auto" \| "modal" \| "popup" \| "redirect"` | Default `"auto"`: popup on desktop, redirect on mobile. See the transport notes above for `modal`. (`"iframe"` still works as a deprecated alias of `"modal"`.) |
 | `appTheme` | `"dark" \| "light"` | The flow renders in the theme YOU pick — there is no user-facing toggle. Appended to your authorize route as `?one_theme=`; forward it to One (step 4). |
 | `onSuccess` | `() => void` | The grant completed and your server stored the tokens. |
 | `onError` | `(error: string) => void` | The flow failed. |

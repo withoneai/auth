@@ -19,14 +19,11 @@ const POPUP_HEIGHT = 760;
 /** Small/coarse-pointer devices get a redirect: mobile browsers open
  *  popups as new tabs, which is exactly the experience we're avoiding. */
 export function resolveWindowMode(
-  requested: "auto" | "popup" | "redirect" | "iframe" | undefined
-): "popup" | "redirect" | "iframe" {
-  if (
-    requested === "popup" ||
-    requested === "redirect" ||
-    requested === "iframe"
-  )
-    return requested;
+  requested: "auto" | "modal" | "popup" | "redirect" | "iframe" | undefined
+): "popup" | "redirect" | "modal" {
+  // "iframe" is the deprecated alias of "modal" — same behavior.
+  if (requested === "modal" || requested === "iframe") return "modal";
+  if (requested === "popup" || requested === "redirect") return requested;
   if (typeof window === "undefined") return "redirect";
   const coarse =
     typeof window.matchMedia === "function" &&
@@ -178,7 +175,7 @@ export function removeOverlay(): void {
 }
 
 /**
- * iframe mode — the authkit-style experience: a full-viewport
+ * Modal mode — the authkit-style experience: a full-viewport
  * transparent iframe over the host page; One's connect page renders a
  * scrim + centered card, so the host app stays visible and dimmed
  * underneath.

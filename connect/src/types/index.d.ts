@@ -7,8 +7,14 @@
  * browsing context and reports how the flow ended.
  */
 
-/** How the One window is opened. */
-export type OneConnectWindowMode = "auto" | "popup" | "redirect" | "iframe";
+/** How the One window is opened. "iframe" is a deprecated alias of
+ *  "modal" (same behavior). */
+export type OneConnectWindowMode =
+  | "auto"
+  | "modal"
+  | "popup"
+  | "redirect"
+  | "iframe";
 
 /** Result posted back from the consumer's completion page. */
 export interface OneConnectResult {
@@ -28,10 +34,11 @@ export interface OneConnectProps {
     url: string;
   };
   /**
-   * "iframe"   — authkit-style: full-viewport transparent iframe; the
-   *              host page stays visible + dimmed under One's card.
-   *              Requires same-site embedding or CHIPS cookies — see
-   *              the README's transport notes.
+   * "modal"    — One's card floats over your page, which stays visible
+   *              and dimmed (rendered in a transparent iframe under the
+   *              hood). Requires same-site embedding or CHIPS cookies —
+   *              see the README's transport notes. ("iframe" is a
+   *              deprecated alias.)
    * "popup"    — floating window over the dimmed host page.
    * "redirect" — same-tab navigation there and back (mobile standard).
    * "auto"     — popup on desktop, redirect on small/coarse-pointer

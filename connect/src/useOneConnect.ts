@@ -143,7 +143,7 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
     const data = event.data as OneConnectMessage | undefined;
     if (!data) return;
 
-    // iframe mode: only trust messages from OUR iframe's browsing
+    // Modal mode: only trust messages from OUR iframe's browsing
     // context. Exit can come from One's page (cross-origin); results
     // come from the completion page, which is the consumer's own
     // origin because the OAuth redirect brought the frame home.
@@ -183,13 +183,13 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
     resultDelivered = false;
 
     const mode = resolveWindowMode(props.window);
-    const url = buildUrl(mode === "iframe");
+    const url = buildUrl(mode === "modal");
 
     // Written for redirect mode (completeOneConnect reads it to come
     // back here); harmless in popup mode where the popup never sees
-    // this tab's sessionStorage. NOT written in iframe mode — the
+    // this tab's sessionStorage. NOT written in modal mode — the
     // completion page must postMessage to the parent, not navigate.
-    if (mode !== "iframe") {
+    if (mode !== "modal") {
       try {
         window.sessionStorage.setItem(
           PENDING_STORAGE_KEY,
@@ -205,7 +205,7 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
       return;
     }
 
-    if (mode === "iframe") {
+    if (mode === "modal") {
       messageHandler = handleMessage;
       window.addEventListener("message", messageHandler);
       createEmbedIframe(url);
