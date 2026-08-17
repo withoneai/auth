@@ -44,15 +44,18 @@ export function openPopup(url: string): Window | null {
   const left = dualLeft + Math.max(0, (width - POPUP_WIDTH) / 2);
   const top = dualTop + Math.max(0, (height - POPUP_HEIGHT) / 2);
 
+  // Keep the feature string MINIMAL. Chromium computes "popup vs tab"
+  // from the feature list, and extra legacy keys (toolbar/menubar/
+  // location) tip some configurations into opening a full tab — the
+  // exact failure this window manager exists to avoid. `popup=yes`
+  // plus geometry is the reliable form. (Chrome always keeps the URL
+  // bar visible on popups anyway, so users still see withone.ai.)
   const features = [
     `width=${POPUP_WIDTH}`,
     `height=${POPUP_HEIGHT}`,
     `left=${Math.round(left)}`,
     `top=${Math.round(top)}`,
     "popup=yes",
-    "toolbar=no",
-    "menubar=no",
-    "location=yes", // keep the URL bar visible — users should see withone.ai
   ].join(",");
 
   try {
