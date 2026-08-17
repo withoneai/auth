@@ -56,6 +56,24 @@ export function completeOneConnect(
     return true;
   }
 
+  // iframe mode: we're the embedded frame, navigated back to the
+  // consumer's origin by the OAuth redirect — the parent is the host
+  // page on the SAME origin. Post the result up; the SDK removes the
+  // iframe and fires the callbacks.
+  if (window.parent && window.parent !== window) {
+    const message: OneConnectMessage = {
+      type: MESSAGE_TYPE,
+      status: result.status,
+      message: result.message,
+    };
+    try {
+      window.parent.postMessage(message, window.location.origin);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // Redirect mode: same tab, so the pending entry written by open()
   // is readable here. Send the user back where they started.
   const pending = readAndConsumePending();

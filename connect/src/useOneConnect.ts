@@ -1,4 +1,6 @@
 import {
+  EMBED_PARAM,
+  EXIT_MESSAGE_TYPE,
   MESSAGE_TYPE,
   PENDING_STORAGE_KEY,
   PENDING_TTL_MS,
@@ -7,7 +9,10 @@ import {
   THEME_PARAM,
 } from "./constants";
 import {
+  createEmbedIframe,
+  getEmbedIframe,
   openPopup,
+  removeEmbedIframe,
   removeOverlay,
   resolveWindowMode,
   showOverlay,
@@ -87,11 +92,11 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let resultDelivered = false;
 
-  const buildUrl = (): string => {
-    if (!props.appTheme) return props.authorize.url;
+  const buildUrl = (embed: boolean): string => {
     try {
       const url = new URL(props.authorize.url);
-      url.searchParams.set(THEME_PARAM, props.appTheme);
+      if (props.appTheme) url.searchParams.set(THEME_PARAM, props.appTheme);
+      if (embed) url.searchParams.set(EMBED_PARAM, "1");
       return url.toString();
     } catch {
       return props.authorize.url;
@@ -108,6 +113,7 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
       messageHandler = null;
     }
     removeOverlay();
+    removeEmbedIframe();
     if (popupRef && !popupRef.closed) {
       try {
         popupRef.close();
@@ -134,12 +140,40 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
   };
 
   const handleMessage = (event: MessageEvent) => {
-    // The completion page lives on the CONSUMER'S OWN origin (their
-    // callback route redirects there), which is the same origin as
-    // this page. Anything else is noise or an attack — drop it.
-    if (event.origin !== window.location.origin) return;
     const data = event.data as OneConnectMessage | undefined;
-    if (!data || data.type !== MESSAGE_TYPE) return;
+    if (!data) return;
+
+    // iframe mode: only trust messages from OUR iframe's browsing
+    // context. Exit can come from One's page (cross-origin); results
+    // come from the completion page, which is the consumer's own
+    // origin because the OAuth redirect brought the frame home.
+    const iframe = getEmbedIframe();
+    if (iframe) {
+      if (event.source !== iframe.contentWindow) return;
+      if (data.type === EXIT_MESSAGE_TYPE) {
+        teardown();
+        try {
+          props.onClose?.();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      if (
+        data.type === MESSAGE_TYPE &&
+        event.origin === window.location.origin &&
+        (data.status === "success" || data.status === "error")
+      ) {
+        deliver(data.status, data.message);
+      }
+      return;
+    }
+
+    // Popup mode: the completion page lives on the CONSUMER'S OWN
+    // origin (their callback route redirects there), which is the same
+    // origin as this page. Anything else is noise or an attack.
+    if (event.origin !== window.location.origin) return;
+    if (data.type !== MESSAGE_TYPE) return;
     if (data.status !== "success" && data.status !== "error") return;
     deliver(data.status, data.message);
   };
@@ -148,23 +182,33 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
     if (typeof window === "undefined") return;
     resultDelivered = false;
 
-    const url = buildUrl();
     const mode = resolveWindowMode(props.window);
+    const url = buildUrl(mode === "iframe");
 
     // Written for redirect mode (completeOneConnect reads it to come
     // back here); harmless in popup mode where the popup never sees
-    // this tab's sessionStorage.
-    try {
-      window.sessionStorage.setItem(
-        PENDING_STORAGE_KEY,
-        JSON.stringify({ returnUrl: window.location.href, at: Date.now() })
-      );
-    } catch {
-      /* private mode / quota — redirect mode degrades gracefully */
+    // this tab's sessionStorage. NOT written in iframe mode — the
+    // completion page must postMessage to the parent, not navigate.
+    if (mode !== "iframe") {
+      try {
+        window.sessionStorage.setItem(
+          PENDING_STORAGE_KEY,
+          JSON.stringify({ returnUrl: window.location.href, at: Date.now() })
+        );
+      } catch {
+        /* private mode / quota — redirect mode degrades gracefully */
+      }
     }
 
     if (mode === "redirect") {
       window.location.href = url;
+      return;
+    }
+
+    if (mode === "iframe") {
+      messageHandler = handleMessage;
+      window.addEventListener("message", messageHandler);
+      createEmbedIframe(url);
       return;
     }
 

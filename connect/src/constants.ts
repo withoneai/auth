@@ -3,8 +3,17 @@
 // these is a breaking change between SDK versions running on the two
 // pages — bump with care.
 
-/** postMessage envelope type, popup mode. */
+/** postMessage envelope type, popup + iframe modes. */
 export const MESSAGE_TYPE = "@withone/connect:result";
+
+/** Posted by One's connect page (cross-origin) when the user closes the
+ *  embedded experience without a result. iframe mode only. */
+export const EXIT_MESSAGE_TYPE = "@withone/connect:exit";
+
+/** Query param appended to the consumer's authorize route in iframe
+ *  mode; their backend forwards it to One as embed=1 so the connect
+ *  page renders as a scrim + card over a transparent body. */
+export const EMBED_PARAM = "one_embed";
 
 /** sessionStorage key for the pending redirect-mode flow. Written on
  *  the host page before navigating away; read back by

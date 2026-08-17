@@ -11,6 +11,7 @@
 
 export const OVERLAY_ID = "one-connect-overlay";
 export const POPUP_NAME = "one-connect";
+export const IFRAME_ID = "one-connect-frame";
 
 const POPUP_WIDTH = 480;
 const POPUP_HEIGHT = 760;
@@ -18,9 +19,14 @@ const POPUP_HEIGHT = 760;
 /** Small/coarse-pointer devices get a redirect: mobile browsers open
  *  popups as new tabs, which is exactly the experience we're avoiding. */
 export function resolveWindowMode(
-  requested: "auto" | "popup" | "redirect" | undefined
-): "popup" | "redirect" {
-  if (requested === "popup" || requested === "redirect") return requested;
+  requested: "auto" | "popup" | "redirect" | "iframe" | undefined
+): "popup" | "redirect" | "iframe" {
+  if (
+    requested === "popup" ||
+    requested === "redirect" ||
+    requested === "iframe"
+  )
+    return requested;
   if (typeof window === "undefined") return "redirect";
   const coarse =
     typeof window.matchMedia === "function" &&
@@ -169,4 +175,47 @@ export function showOverlay(handlers: OverlayHandlers): void {
 export function removeOverlay(): void {
   const existing = document.getElementById(OVERLAY_ID);
   if (existing) existing.remove();
+}
+
+/**
+ * iframe mode — the authkit-style experience: a full-viewport
+ * transparent iframe over the host page; One's connect page renders a
+ * scrim + centered card, so the host app stays visible and dimmed
+ * underneath.
+ *
+ * ⚠ Transport caveat: everything in the flow rides on the user's One
+ * session cookie, which is a THIRD-PARTY cookie inside a cross-site
+ * iframe — blocked by Safari/Firefox unless One serves it as a
+ * `Partitioned` (CHIPS) cookie, and subject to the authorization
+ * server's frame-ancestors policy (RFC 6749 §10.13). Same-site
+ * embedding (e.g. localhost dev) works everywhere. Prefer "popup" or
+ * "redirect" when you can't accept those constraints.
+ */
+export function createEmbedIframe(url: string): HTMLIFrameElement {
+  removeEmbedIframe();
+  const iframe = document.createElement("iframe");
+  iframe.id = IFRAME_ID;
+  iframe.src = url;
+  iframe.setAttribute("allowtransparency", "true");
+  Object.assign(iframe.style, {
+    position: "fixed",
+    inset: "0",
+    width: "100%",
+    height: "100%",
+    border: "0",
+    zIndex: "2147483000",
+    background: "transparent",
+    colorScheme: "normal", // keep the transparent viewport from being painted
+  } as Partial<CSSStyleDeclaration>);
+  document.body.appendChild(iframe);
+  return iframe;
+}
+
+export function removeEmbedIframe(): void {
+  const existing = document.getElementById(IFRAME_ID);
+  if (existing) existing.remove();
+}
+
+export function getEmbedIframe(): HTMLIFrameElement | null {
+  return document.getElementById(IFRAME_ID) as HTMLIFrameElement | null;
 }

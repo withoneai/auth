@@ -8,7 +8,7 @@
  */
 
 /** How the One window is opened. */
-export type OneConnectWindowMode = "auto" | "popup" | "redirect";
+export type OneConnectWindowMode = "auto" | "popup" | "redirect" | "iframe";
 
 /** Result posted back from the consumer's completion page. */
 export interface OneConnectResult {
@@ -28,7 +28,11 @@ export interface OneConnectProps {
     url: string;
   };
   /**
-   * "popup"    — floating window over the dimmed host page (desktop feel).
+   * "iframe"   — authkit-style: full-viewport transparent iframe; the
+   *              host page stays visible + dimmed under One's card.
+   *              Requires same-site embedding or CHIPS cookies — see
+   *              the README's transport notes.
+   * "popup"    — floating window over the dimmed host page.
    * "redirect" — same-tab navigation there and back (mobile standard).
    * "auto"     — popup on desktop, redirect on small/coarse-pointer
    *              devices. Default.

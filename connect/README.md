@@ -37,12 +37,23 @@ useOneConnect().open()
 onSuccess() fires
 ```
 
-Two window modes, picked automatically:
+Three window modes:
 
-- **Desktop** — a floating popup window over your dimmed page. Your page never
+- **`iframe`** — authkit-style: your page stays visible and dimmed while
+  One's card floats above it in a transparent iframe. The best-feeling mode —
+  with one transport constraint: the flow rides on the user's One session
+  cookie, which is third-party inside a cross-site iframe. Same-site setups
+  (e.g. localhost dev) work everywhere; cross-site production embedding needs
+  One's CHIPS (`Partitioned`) session cookies and a per-client
+  `frame-ancestors` allow-list on One's side. Use `popup`/`redirect` if you
+  can't accept that.
+- **`popup`** — a floating popup window over your dimmed page. Your page never
   navigates and keeps all its state.
-- **Mobile** — a same-tab redirect there and back (popups become tabs on
-  mobile, which is worse). The user returns to the exact page they started on.
+- **`redirect`** — a same-tab trip to One and back to the exact page the user
+  started on. The default on mobile (popups become tabs there), and the most
+  bulletproof mode everywhere.
+
+`window: "auto"` (the default) picks popup on desktop and redirect on mobile.
 
 ---
 
@@ -100,8 +111,8 @@ export function ConnectWithOne() {
 | Option | Type | Description |
 |---|---|---|
 | `authorize.url` | `string` | Your backend route from step 4. Must be absolute. |
-| `window` | `"auto" \| "popup" \| "redirect"` | Default `"auto"`: popup on desktop, redirect on mobile. |
-| `appTheme` | `"dark" \| "light"` | Appended to your authorize route as `?one_theme=`; forward it to One (step 4). |
+| `window` | `"auto" \| "iframe" \| "popup" \| "redirect"` | Default `"auto"`: popup on desktop, redirect on mobile. See the transport notes above for `iframe`. |
+| `appTheme` | `"dark" \| "light"` | The flow renders in the theme YOU pick — there is no user-facing toggle. Appended to your authorize route as `?one_theme=`; forward it to One (step 4). |
 | `onSuccess` | `() => void` | The grant completed and your server stored the tokens. |
 | `onError` | `(error: string) => void` | The flow failed. |
 | `onClose` | `() => void` | The user abandoned the flow. |
