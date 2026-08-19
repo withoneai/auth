@@ -1,6 +1,8 @@
 import {
   EXIT_MESSAGE_TYPE,
   MESSAGE_TYPE,
+  RETURN_MESSAGE_PARAM,
+  RETURN_STATUS_PARAM,
   THEME_PARAM,
 } from "./constants";
 import {
@@ -87,13 +89,42 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
     }
   };
 
+  // Fires on every navigation inside the frame. While the frame is on
+  // One's origin, reading its location throws (same-origin policy) and
+  // we ignore it. The moment the consumer's callback redirects home —
+  // to ANY same-origin URL carrying ?one_connect=success|error — the
+  // read succeeds and the flow completes. The consumer writes no
+  // completion page and no postMessage; their callback's final
+  // redirect IS the completion signal.
+  const handleFrameLoad = () => {
+    const iframe = getEmbedIframe();
+    if (!iframe) return;
+    let href: string;
+    try {
+      href = iframe.contentWindow?.location.href ?? "";
+    } catch {
+      return; // still cross-origin — not home yet
+    }
+    let params: URLSearchParams;
+    try {
+      params = new URL(href).searchParams;
+    } catch {
+      return;
+    }
+    const status = params.get(RETURN_STATUS_PARAM);
+    if (status !== "success" && status !== "error") return;
+    iframe.style.visibility = "hidden"; // no flash of the landing page
+    deliver(status, params.get(RETURN_MESSAGE_PARAM) ?? undefined);
+  };
+
   const open = () => {
     if (typeof window === "undefined") return;
     resultDelivered = false;
 
     messageHandler = handleMessage;
     window.addEventListener("message", messageHandler);
-    createEmbedIframe(buildUrl());
+    const iframe = createEmbedIframe(buildUrl());
+    iframe.addEventListener("load", handleFrameLoad);
   };
 
   const close = () => {

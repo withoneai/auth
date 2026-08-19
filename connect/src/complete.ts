@@ -2,16 +2,14 @@ import { MESSAGE_TYPE } from "./constants";
 import type { OneConnectMessage, OneConnectResult } from "./types";
 
 /**
- * Call this on the page your OAuth callback route redirects to, after
- * your server has exchanged the code for tokens. One line closes the
- * loop: we are the embedded frame, navigated back to the consumer's
- * origin by the OAuth redirect, so the parent is the host page on the
- * SAME origin. Post the result up; the SDK removes the modal and fires
- * onSuccess/onError there.
+ * OPTIONAL. The standard integration needs no completion page at all:
+ * the callback route's final redirect carries ?one_connect=success (or
+ * error) on any same-origin URL, and the SDK reads it off the frame's
+ * location directly. Use this helper only if you render a custom
+ * completion page and want to signal the SDK from it explicitly.
  *
  * Returns false when it had nothing to do (not inside a frame) — e.g.
- * the user opened the callback URL directly. Render your own fallback
- * UI in that case.
+ * the user opened the page directly. Render fallback UI in that case.
  */
 export function completeOneConnect(
   result: OneConnectResult = { status: "success" }

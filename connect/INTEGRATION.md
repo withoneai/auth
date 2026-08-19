@@ -14,7 +14,6 @@ OAuth tokens and call one API.
 | 4 environment values | your server's `.env` | copy-paste |
 | 1 button | your frontend | ~10 lines |
 | 2 API routes (`authorize`, `callback`) | your backend | ~40 lines each |
-| 1 completion page | your frontend | 1 line that matters |
 | 1 token helper (auto-refresh) | your backend | ~25 lines |
 
 Every snippet below is lifted from a working reference app and shown in
@@ -39,8 +38,8 @@ stack (Express, Rails, Django…) maps 1:1.
                             checks the cookie,
                             trades code + your secret ──▶ One's token endpoint
                             stores tokens          ◀───── access token + refresh token
-                            → completion page
-   modal closes, onSuccess() fires
+                            → redirects with ?one_connect=success
+   modal closes, onSuccess() fires — the SDK reads the redirect itself
 ```
 
 Two principles to hold on to — they explain every design choice below:
@@ -209,9 +208,12 @@ export async function GET(req: NextRequest) {
   const oauthError = req.nextUrl.searchParams.get("error");
   const tx = req.cookies.get("one_tx")?.value;
 
+  // Your final redirect IS the completion signal: land the frame on ANY
+  // page of your app with ?one_connect=success|error in the URL and the
+  // SDK closes the modal and fires your callback. No completion page.
   const fail = (message: string) => {
     const res = NextResponse.redirect(
-      new URL(`/one/complete?status=error&message=${encodeURIComponent(message)}`, req.url),
+      new URL(`/?one_connect=error&one_connect_message=${encodeURIComponent(message)}`, req.url),
       302,
     );
     res.cookies.delete("one_tx");
@@ -263,44 +265,22 @@ export async function GET(req: NextRequest) {
     expiresAt: Date.now() + tokens.expires_in * 1000,
   });
 
-  const res = NextResponse.redirect(new URL("/one/complete?status=success", req.url), 302);
+  const res = NextResponse.redirect(new URL("/?one_connect=success", req.url), 302);
   res.cookies.delete("one_tx");
   return res;
 }
 ```
 
-## Step 4 · Frontend: the completion page
+*Why this ends with a plain redirect:* the SDK owns the invisible frame,
+and once your callback sends it back to **your** origin, the SDK is
+allowed to read the frame's URL. It sees `one_connect=success`, closes
+the modal, and fires your `onSuccess` — you write no completion page and
+enforce nothing. What happens next is entirely yours. (If you *want* a
+custom completion experience inside the card, the SDK exports an
+optional `completeOneConnect()` helper — but the standard path needs
+nothing.)
 
-The callback redirected the (still-invisible-to-you) frame here. One call
-tells the SDK "done" — the card dissolves and your `onSuccess` fires.
-
-```tsx
-// app/one/complete/page.tsx
-"use client";
-
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { completeOneConnect } from "@withone/connect";
-
-export default function OneCompletePage() {
-  const params = useSearchParams();
-  const [fallback, setFallback] = useState(false);
-
-  useEffect(() => {
-    const ok = completeOneConnect(
-      params?.get("status") === "success"
-        ? { status: "success" }
-        : { status: "error", message: params?.get("message") ?? "The connection was not completed." },
-    );
-    // ok === false → someone opened this URL directly; show a way home.
-    if (!ok) setFallback(true);
-  }, [params]);
-
-  return fallback ? <a href="/">Back to the app</a> : <p>Finishing up…</p>;
-}
-```
-
-## Step 5 · Backend: the token helper ("the renewals clerk")
+## Step 4 · Backend: the token helper ("the renewals clerk")
 
 Access tokens last ~1 hour **on purpose** — a stolen bearer token is a
 60-minute problem, not a forever problem. Refresh tokens last ~30 days
@@ -342,7 +322,7 @@ export async function getOneAccessToken(userId: string): Promise<string> {
 }
 ```
 
-## Step 6 · Using the grant
+## Step 5 · Using the grant
 
 ```ts
 const token = await getOneAccessToken(userId);
