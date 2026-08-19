@@ -1,5 +1,4 @@
 import {
-  EMBED_PARAM,
   EXIT_MESSAGE_TYPE,
   MESSAGE_TYPE,
   THEME_PARAM,
@@ -21,11 +20,15 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
   let messageHandler: ((event: MessageEvent) => void) | null = null;
   let resultDelivered = false;
 
+  // The theme rides in the URL FRAGMENT: fragments never reach any
+  // server and browsers carry them through the whole redirect chain
+  // (consumer's authorize route -> One -> the card), so the consumer's
+  // backend forwards NOTHING. Embedding needs no signal at all -- the
+  // card detects its own iframe with window.self !== window.top.
   const buildUrl = (): string => {
     try {
       const url = new URL(props.authorize.url);
-      if (props.appTheme) url.searchParams.set(THEME_PARAM, props.appTheme);
-      url.searchParams.set(EMBED_PARAM, "1");
+      if (props.appTheme) url.hash = `${THEME_PARAM}=${props.appTheme}`;
       return url.toString();
     } catch {
       return props.authorize.url;

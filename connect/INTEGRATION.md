@@ -104,7 +104,8 @@ export function ConnectWithOne() {
       // YOUR backend route from Step 2 — absolute URL.
       url: `${window.location.origin}/api/one/authorize`,
     },
-    appTheme: "light",            // or "dark" — matches YOUR app; no user toggle
+    appTheme: "light",            // or "dark" — matches YOUR app; travels on its
+                                  // own (URL fragment), nothing to forward
     onSuccess: () => {
       // By the time this fires, your backend already holds the tokens.
     },
@@ -173,14 +174,6 @@ export async function GET(req: NextRequest) {
     // Pre-fills (never locks) the email on One's card — one less thing
     // for your user to type. They can still hit "Not you?" and change it.
     url.searchParams.set("login_hint", userEmail);
-  }
-
-  // Forward the two params the SDK appended, so One renders the card
-  // in your theme and as an embedded overlay:
-  const theme = req.nextUrl.searchParams.get("one_theme");
-  if (theme) url.searchParams.set("theme", theme);
-  if (req.nextUrl.searchParams.get("one_embed") === "1") {
-    url.searchParams.set("embed", "1");
   }
 
   const res = NextResponse.redirect(url.toString(), 302);
@@ -394,4 +387,3 @@ very next call.
 - [ ] Registered redirect URI matches your callback URL exactly (scheme, host, path)
 - [ ] The refresh path saves **both** tokens, every time
 - [ ] `401`/`403` render a friendly "reconnect your tools" prompt, not a crash
-- [ ] The `one_theme` and `one_embed` params are forwarded by your authorize route (Step 2 — already in the snippet)

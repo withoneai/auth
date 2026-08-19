@@ -10,11 +10,7 @@ export const MESSAGE_TYPE = "@withone/connect:result";
  *  card without a result. */
 export const EXIT_MESSAGE_TYPE = "@withone/connect:exit";
 
-/** Query param appended to the consumer's authorize route; their
- *  backend forwards it to One as embed=1 so the connect page renders as
- *  a scrim + card over a transparent body. */
-export const EMBED_PARAM = "one_embed";
-
-/** Query param appended to the consumer's authorize route so their
- *  backend can forward the theme to One's connect page. */
+/** Fragment key on the authorize URL carrying the app-chosen theme.
+ *  A fragment never reaches any server and survives the whole redirect
+ *  chain, so the consumer's backend forwards nothing. */
 export const THEME_PARAM = "one_theme";
