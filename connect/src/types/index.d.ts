@@ -24,8 +24,9 @@ export interface OneConnectProps {
   authorize: {
     url: string;
   };
-  /** Forwarded to the authorize route as ?one_theme= so the backend can
-   *  pass it through to One's connect page. */
+  /** Theme for One's card. Carried on the URL fragment (#one_theme=…),
+   *  which survives the redirect chain — the consumer's backend forwards
+   *  nothing. */
   appTheme?: "dark" | "light";
   /** Fired when the completion page reports success. The token exchange
    *  already happened on the consumer's backend by this point. */
