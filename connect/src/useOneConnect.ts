@@ -9,6 +9,8 @@ import {
   createEmbedIframe,
   getEmbedIframe,
   removeEmbedIframe,
+  removeSuccessOverlay,
+  showSuccessOverlay,
 } from "./window";
 import type {
   OneConnectHandle,
@@ -48,6 +50,11 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
   const deliver = (status: "success" | "error", message?: string) => {
     if (resultDelivered) return;
     resultDelivered = true;
+    teardown();
+    // The confirmation beat: by now the frame is gone, so the SDK
+    // paints a brief "Access granted" card itself while the host page
+    // (already told via onSuccess below) updates underneath it.
+    if (status === "success") showSuccessOverlay(props.appTheme);
     try {
       if (status === "success") {
         props.onSuccess?.();
@@ -57,7 +64,6 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
     } catch {
       /* consumer callback errors are not our problem */
     }
-    teardown();
   };
 
   // Only trust messages from OUR iframe's browsing context. Exit can
@@ -128,6 +134,7 @@ export const useOneConnect = (props: OneConnectProps): OneConnectHandle => {
   };
 
   const close = () => {
+    removeSuccessOverlay();
     teardown();
   };
 
