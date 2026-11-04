@@ -1,3 +1,5 @@
+> ⚠️ **Deprecated.** `@withone/auth` is no longer maintained. Use [`@withone/connect`](https://npmjs.com/package/@withone/connect) instead — it covers the same connect flow with a smaller API and support for more frameworks. See the [Connect docs](https://withone.ai/docs/connect) to migrate.
+
 <img src="https://assets.withone.ai/banners/auth.png" alt="One Auth — Connect your users to every app with a drop-in auth widget." style="border-radius: 5px;">
 
 <h3 align="center">One Auth</h3>
